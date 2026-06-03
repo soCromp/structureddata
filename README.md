@@ -5,8 +5,7 @@
 ### Environment 
 ```bash
 conda create --name sd python==3.12
-pip install pandas 
-conda install -c pytorch -c conda-forge ctgan
+pip install pandas kagglehub[pandas-datasets]
 ```
 
 ### Steps to run

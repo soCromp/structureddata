@@ -1,6 +1,8 @@
 import pandas as pd
 from typing import Literal, Dict, Any
 import os
+import kagglehub
+from kagglehub import KaggleDatasetAdapter
 
 class BaseFormatter:
     """Base class for translating data to model-specific formats."""
@@ -35,7 +37,7 @@ class TabbyFormatter(BaseFormatter):
 class UnifiedDataLoader:
     """The main orchestrator for the benchmark pipeline."""
     
-    DATASETS = ["secrepo", "caida", "clinicaltrials", "nexrad", "crypto_lob", "opencorporates", "moma"]
+    DATASETS = ["secrepo", "caida", "clinicaltrials", "nexrad", "lob", "opencorporates", "moma"]
     MODEL_TYPES = ["diffusion", "llm", "tabdlm", "tabby", "gan"]
 
     def __init__(self, dataset_name: str, target_model_type: str):
@@ -60,14 +62,28 @@ class UnifiedDataLoader:
         std_val_frac = 0.10
         # std_test_frac is the rest 0.15
         
-        if self.dataset_name == 'moma':
-            if os.path.exists('data/processed/moma/train.csv') and \
-                        os.path.exists('data/processed/moma/val.csv') and \
-                        os.path.exists('data/processed/moma/test.csv'):
-                df_train = pd.read_csv('data/processed/moma/train.csv')
-                df_val = pd.read_csv('data/processed/moma/val.csv')
-                df_test = pd.read_csv('data/processed/moma/test.csv')
-            else:
+        if os.path.exists(f'data/processed/{self.dataset_name}/train.csv') and \
+                        os.path.exists(f'data/processed/{self.dataset_name}/val.csv') and \
+                        os.path.exists(f'data/processed/{self.dataset_name}/test.csv'):
+                df_train = pd.read_csv(f'data/processed/{self.dataset_name}/train.csv')
+                df_val = pd.read_csv(f'data/processed/{self.dataset_name}/val.csv')
+                df_test = pd.read_csv(f'data/processed/{self.dataset_name}/test.csv')
+        else:
+            if self.dataset_name == 'lob':
+                gap = 120 # 2 hours to prevent leakage
+                df = kagglehub.dataset_load(
+                    kagglehub.KaggleDatasetAdapter.PANDAS,
+                    "martinsn/high-frequency-crypto-limit-order-book-data",
+                    "BTC_1min.csv"
+                )
+                df.drop(columns=['Unnamed: 0'], inplace=True)
+                
+                size = len(df) - 2*gap
+                df_train = df[:int(std_train_frac*size)]
+                df_val = df[int(std_train_frac*size) + gap:int((std_train_frac+std_val_frac)*size + gap)]
+                df_test = df[int((std_train_frac+std_val_frac)*size + 2*gap):]
+                print(df_train.shape, df_val.shape, df_test.shape)
+            elif self.dataset_name == 'moma':
                 df = pd.read_csv('data/raw/moma/collection/Artworks.csv')
                 df.drop_duplicates(subset=['Title'], keep='first', inplace=True)
                 df.drop_duplicates(subset=['Artist'], keep='first', inplace=True)
@@ -77,19 +93,20 @@ class UnifiedDataLoader:
                 df_train = df[:int(std_train_frac*len(df))]
                 df_val = df[int(std_train_frac*len(df)):int((std_train_frac+std_val_frac)*len(df))]
                 df_test = df[int(std_train_frac+std_val_frac)*len(df):]
-                os.makedirs('data/processed/moma/', exist_ok=True)
-                df_train.to_csv('data/processed/moma/train.csv', index=False)
-                df_val.to_csv('data/processed/moma/val.csv', index=False)
-                df_test.to_csv('data/processed/moma/test.csv', index=False)
-        else:
-            raise NotImplementedError(f"Loading for {self.dataset_name} not yet implemented")
+            else:
+                raise NotImplementedError(f"Loading for {self.dataset_name} not yet implemented")
+            
+            os.makedirs(f'data/processed/{self.dataset_name}/', exist_ok=True)
+            df_train.to_csv(f'data/processed/{self.dataset_name}/train.csv', index=False)
+            df_val.to_csv(f'data/processed/{self.dataset_name}/val.csv', index=False)
+            df_test.to_csv(f'data/processed/{self.dataset_name}/test.csv', index=False)
             
         return df_train, df_val, df_test
 
     def _get_task_metadata(self) -> Dict:
         """Returns the target column and task type (e.g., classification, regression)."""
         tasks = {
-            "crypto_lob":       {"target": "midpoint_direction", "type": "classification"},
+            "lob":              {"target": "midpoint_direction", "type": "classification"},
             "nexrad":           {"target": "is_severe_hail", "type": "classification"},
             "clinicaltrials":   {"target": "study_status", "type": "classification"},
             "moma":             {"target": "department", "type": "classification"}
@@ -110,6 +127,6 @@ class UnifiedDataLoader:
     
 if __name__ == "__main__":
     # this is here for debugging 
-    loader = UnifiedDataLoader(dataset_name="moma", target_model_type="llm")
-    print(loader.raw_train.shape, loader.raw_train.head(), loader.raw_train['Title'].unique().shape)
+    loader = UnifiedDataLoader(dataset_name="lob", target_model_type="llm")
+    print(loader.raw_train.shape, loader.raw_train.head(),)
     

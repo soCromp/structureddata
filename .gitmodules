@@ -1,0 +1,15 @@
+[submodule "models/CTAB-GAN-Plus"]
+	path = models/CTAB-GAN-Plus
+	url = https://github.com/Team-TUD/CTAB-GAN-Plus.git
+[submodule "models/TabDiff"]
+	path = models/TabDiff
+	url = https://github.com/MinkaiXu/TabDiff.git
+[submodule "models/TabDLM"]
+	path = models/TabDLM
+	url = https://github.com/ilikevegetable/TabDLM.git
+[submodule "models/TabKG"]
+	path = models/TabKG
+	url = https://github.com/Yunbo-max/TabKG.git
+[submodule "models/tabby"]
+	path = models/tabby
+	url = https://github.com/soCromp/tabby.git
