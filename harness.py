@@ -77,6 +77,23 @@ class UnifiedDataLoader:
                     "BTC_1min.csv"
                 )
                 df.drop(columns=['Unnamed: 0'], inplace=True)
+                df = df.sort_values('system_time').reset_index(drop=True) # just in case it isnt in order
+                
+                core_columns = ['system_time', 'midpoint']
+    
+                max_depth=5
+                for i in range(max_depth):
+                    core_columns.extend([
+                        f'bids_distance_{i}', 
+                        f'asks_distance_{i}', 
+                        f'bids_notional_{i}', 
+                        f'asks_notional_{i}'
+                    ])
+                    
+                # 4. Slice the dataframe
+                df = df[core_columns]
+                df['system_time'] = pd.to_datetime(df['system_time'])
+                df['system_time'] = df['system_time'].dt.strftime('%Y-%m-%d %H:%M')
                 
                 size = len(df) - 2*gap
                 df_train = df[:int(std_train_frac*size)]
@@ -127,6 +144,6 @@ class UnifiedDataLoader:
     
 if __name__ == "__main__":
     # this is here for debugging 
-    loader = UnifiedDataLoader(dataset_name="lob", target_model_type="llm")
+    loader = UnifiedDataLoader(dataset_name="moma", target_model_type="llm")
     print(loader.raw_train.shape, loader.raw_train.head(),)
     
