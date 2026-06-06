@@ -23,7 +23,7 @@ class TabDiffFormatter(BaseFormatter):
         cols = [col for col in meta['columns'] if \
             col in set(meta['categorical'] + meta['integer'] + meta['continuous'] + [meta['target']])]
         df = df[cols] # so this doesn't change relative ordering but removes non categorical text
-        df.to_csv(os.path.join(datadir, f'{meta["dataset_name"]}.csv'), index=False)
+        df.to_csv(os.path.join(datadir, f'{split}.csv'), index=False)
     
     
     def format_metadata(self, meta: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,9 +46,9 @@ class TabDiffFormatter(BaseFormatter):
             "cat_col_idx": cats,  # list of indices of categorical columns
             "target_col_idx": targets, # list of indices of the target columns (for MLE)
             "file_type": "csv",
-            "data_path": f"data/{meta['dataset_name']}/{meta['dataset_name']}.csv",
-            "test_path": None,
-            "val_path": None,
+            "data_path": f"data/{meta['dataset_name']}/train.csv",
+            "test_path": f"data/{meta['dataset_name']}/test.csv",
+            "val_path": f"data/{meta['dataset_name']}/val.csv",
         }
         with open(os.path.join(metadir, f'{meta["dataset_name"]}.json'), 'w') as f:
             json.dump(td_meta, f)
@@ -67,14 +67,24 @@ class LLMFormatter(BaseFormatter):
 
 
 class TabDLMFormatter(BaseFormatter):
-    """Separates text columns and numerical columns for joint diffusion."""
+    """TabDLM."""
     def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
-        # Returns Dict: {"text_inputs": [...], "continuous_inputs": [...]}
-        pass
+        datadir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'models/TabDLM/data/tabular', meta['dataset_name'])
+        os.makedirs(datadir, exist_ok=True)
+        
+        # must be num then cat then text (target wherever)
+        df = df[meta['continuous'] + meta['integer'] + meta['categorical'] + meta['text']]
+        
+        df.to_csv(os.path.join(datadir, f'{split}.csv'), index=False)
+        return df
     
     
     def format_metadata(self, meta: Dict[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError
+        meta['nums'] = meta['continuous'] + meta['integer']
+        meta['columns'] = meta['continuous'] + meta['integer'] + meta['categorical'] + meta['text']
+        meta['type'] = 'binclass' if meta['type'] == 'classification' else 'regression'
+        return meta
 
         
 class TabbyFormatter(BaseFormatter):
@@ -244,10 +254,11 @@ class UnifiedDataLoader:
                 df.drop_duplicates(subset=['Artist'], keep='first', inplace=True)
                 # classification is too similar to department
                 df.drop(columns=['URL', 'ImageURL', 'Classification', 'Artist', 'Seat Height (cm)'], inplace=True)
+                df = df.replace(r'[\r\n]+', ' ', regex=True)
                 df = df.sample(random_state=42, frac=1.0).reset_index(drop=True)
                 df_train = df[:int(std_train_frac*len(df))]
                 df_val = df[int(std_train_frac*len(df)):int((std_train_frac+std_val_frac)*len(df))]
-                df_test = df[int(std_train_frac+std_val_frac)*len(df):]
+                df_test = df[int((std_train_frac+std_val_frac)*len(df)):]
             else:
                 raise NotImplementedError(f"Loading for {self.dataset_name} not yet implemented")
             
