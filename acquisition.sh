@@ -1,9 +1,18 @@
 #!/bin/bash
 # acquisition.sh
 
+DATA_DIR="data/raw"
+mkdir -p $DATA_DIR
+cd $DATA_DIR
+
+############ Honeypot ############
+wget https://secrepo.com/honeypot/honeypot.json.zip
+unzip -o honeypot.json
+rm -f honeypot.json.zip*
+echo "Honeypot saved locally."
 
 ############ MOMA ############
-MOMA_DIR="/home/sonia/structureddata/data/raw/moma"
+MOMA_DIR="./moma"
 MOMA_HASH="e7dbe23cbe87022831190632fdca26b568f8d351"
 
 mkdir -p $MOMA_DIR
@@ -16,5 +25,5 @@ git clone https://github.com/MuseumofModernArt/collection.git
 cd collection
 git checkout $MOMA_HASH
 
-echo "MoMA dataset pinned and saved locally."
+echo "MoMA saved locally."
 

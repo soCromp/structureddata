@@ -147,7 +147,7 @@ class UnifiedDataLoader:
     """The main orchestrator for the benchmark pipeline."""
     
     
-    DATASETS = ["secrepo", "caida", "clinicaltrials", "nexrad", "lob", "opencorporates", "moma"]
+    DATASETS = ["honeypot", "caida", "clinicaltrials", "nexrad", "lob", "opencorporates", "moma"]
     MODEL_TYPES = ["tabdiff", "llm", "tabdlm", "tabby", "gan"]
 
 
@@ -186,7 +186,46 @@ class UnifiedDataLoader:
             df = pd.read_csv(os.path.join(data_dir, 'all.csv'))
                 
         else:
-            if self.dataset_name == 'lob':
+            if self.dataset_name == 'honeypot':
+                import json
+                file_path = os.path.join(base_dir, 'data/raw/honeypot.json')
+                
+                print("Loading SecRepo JSONL data...")
+                df = pd.read_json(file_path, lines=True)
+                
+                print("Flattening nested payload...")
+                def safe_parse(val):
+                    try:
+                        return json.loads(val)
+                    except:
+                        return {}
+                
+                # Expand the parsed JSON dictionary into individual columns
+                payload_df = pd.json_normalize(df['payload'].apply(safe_parse))
+                df = pd.concat([df, payload_df], axis=1)
+                
+                # Split the mixed-type 'source' array into distinct IP and Port columns
+                df['source_ip'] = df['source'].apply(lambda x: str(x[0]) if isinstance(x, list) and len(x) > 0 else "Missing")
+                df['source_port'] = df['source'].apply(lambda x: str(x[1]) if isinstance(x, list) and len(x) > 1 else "Missing")
+                
+                # Sort chronologically to prevent data leakage in the ML evaluator
+                df['time'] = pd.to_datetime(df['time'], errors='coerce')
+                df = df.sort_values('time').reset_index(drop=True)
+                
+                # Clean up the metadata and original nested structures
+                cols_to_drop = ['_id', 'ident', 'normalized', 'channel', 'payload', 'source', 'timestamp', 'time', 'filename']
+                df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
+                
+                # Drop rows where the target variable is completely missing
+                df.dropna(subset=['pattern'], inplace=True)
+                
+                # Chronological split
+                size = len(df)
+                df_train = df[:int(std_train_frac*size)]
+                df_val = df[int(std_train_frac*size):int((std_train_frac+std_val_frac)*size)]
+                df_test = df[int((std_train_frac+std_val_frac)*size):]
+                
+            elif self.dataset_name == 'lob':
                 import kagglehub
                 from kagglehub import KaggleDatasetAdapter
                 gap = 120 # 2 hours to prevent leakage
@@ -289,6 +328,7 @@ class UnifiedDataLoader:
     def _get_task_metadata(self) -> Dict:
         """Returns the target column and task type (e.g., classification, regression)."""
         tasks = {
+            "honeypot":         {"target": 'pattern', "type": "classification"},
             "lob":              {"target": "target_direction", "type": "classification"},
             "nexrad":           {"target": "is_severe_hail", "type": "classification"},
             "clinicaltrials":   {"target": "study_status", "type": "classification"},

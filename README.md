@@ -12,7 +12,7 @@ pip install pandas kagglehub[pandas-datasets]
 ```bash
 chmod +x acquisition.sh
 ./acquisition.sh
-python harness.py
+python handler.py moma
 ```
 
 ### Attributions
