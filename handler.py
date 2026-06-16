@@ -1,6 +1,6 @@
 import sys 
 import pandas as pd
-from typing import Literal, Dict, Any
+from typing import Dict, Any
 import os
 import numpy as np
 
@@ -56,14 +56,12 @@ class TabDiffFormatter(BaseFormatter):
 
 
 class LLMFormatter(BaseFormatter):
-    """Serializes rows into text strings for ICL."""
+    """Passes dataframes through directly for k-shot sampling."""
     def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
-        # E.g., "The company name is ACME. The incorporation date is 2014-07-15."
-        pass
-    
+        return df
     
     def format_metadata(self, meta: Dict[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError
+        return meta
 
 
 class TabDLMFormatter(BaseFormatter):
