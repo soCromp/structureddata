@@ -135,7 +135,7 @@ class GANFormatter(BaseFormatter):
         print(f"dropping columns {set(df.columns)-set(all_valid_cols)} due to GAN limitation")
         df = df[all_valid_cols].copy() # prevent SettingWithCopyWarning
         
-        if meta['datetime']:
+        if len(meta.get('datetime', [])) > 0:
             for col in meta['datetime']:
                 # temporarily fill NaT so astype('int64') doesn't underflow
                 is_missing = df[col].isna()
