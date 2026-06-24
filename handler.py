@@ -131,13 +131,20 @@ class TabbyFormatter(BaseFormatter):
 class GANFormatter(BaseFormatter):
     """CTGAN+"""
     def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
-        # salting strings to prevent CSV-re-inference crashes 
-        # for col in meta['categorical']:
-        #     df[col] = "val_" + df[col].fillna("Missing").astype(str)
-            
-        all_valid_cols = meta['categorical'] + meta['continuous'] + meta['integer']
+        all_valid_cols = meta['categorical'] + meta['continuous'] + meta['integer'] + meta['datetime']
         print(f"dropping columns {set(df.columns)-set(all_valid_cols)} due to GAN limitation")
-        df = df[all_valid_cols]
+        df = df[all_valid_cols].copy() # prevent SettingWithCopyWarning
+        
+        if meta['datetime']:
+            for col in meta['datetime']:
+                # temporarily fill NaT so astype('int64') doesn't underflow
+                is_missing = df[col].isna()
+                # Fill, cast to UNIX epoch, then convert back to float so we can use np.nan
+                df[col] = df[col].fillna(pd.Timestamp("1970-01-01")).astype('int64') // 10**9
+                df[col] = df[col].astype(float)
+                # put 0s where the NaTs were
+                df.loc[is_missing, col] = 0.0
+                
         print(df.shape)
         return df
     
@@ -145,8 +152,8 @@ class GANFormatter(BaseFormatter):
     # must be called prior to format_data
     def format_metadata(self, meta: Dict[str, Any]) -> Dict[str, Any]:
         meta['type'] = meta['type'].title()
-        meta.pop('text')
-        meta.pop('datetime')
+        meta.pop('text', None)
+        meta['continuous'] = meta.get('continuous', []) + meta.pop('datetime', [])
         return meta
 
 
