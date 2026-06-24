@@ -12,10 +12,10 @@ done
 
 # tabdiff dataset prep
 cd models/TabDiff
-# conda activate tabdiff 
-# for dataset in "${Datasets[@]}"; do
-#     python process_dataset.py --dataname "$dataset"
-# done
+conda activate tabdiff 
+for dataset in "${Datasets[@]}"; do
+    python process_dataset.py --dataname "$dataset"
+done
 
 cd ..
 for dataset in "${Datasets[@]}"; do
@@ -24,7 +24,7 @@ for dataset in "${Datasets[@]}"; do
     conda activate ctganp 
     python run_ctganp.py "$dataset"
 
-    for i in {1..1}; do
+    for i in {1..3}; do
         cd ../tabby
         conda activate tabby
         
@@ -37,6 +37,20 @@ for dataset in "${Datasets[@]}"; do
         python run_tabdiff.py --dataset $dataset --mode train
         python main.py --dataname $dataset --mode test --report --no_wandb
         cp synthetic/${dataset}/test.csv ../../synth/${dataset}/tabdiff_$i.csv
+
+        cd ../TabDLM
+        conda activate tabdlm
+        PYTHONPATH=. python main.py train --dataset_name $dataset --description "_tabdlm" \
+                    --epochs 1 --batch_size 1 --batch_accum 128 --lora_r 4 --lora_alpha 128 \
+                    --answer_len 160 --loss_type no_divide_pmask --bf16 
+        PYTHONPATH=. python main.py sample --dataset_name $dataset --description "_tabdlm" \
+                    --save_description "_tabdlm_synth" --do_sampling --bf16 --use_best_ckp \
+                    --gen_length 160 --block_length 160 --sample_step 160 --temperature 1.0 \
+                    --sample_batch_size 8 --seed $i 
+
+        cd ../TabKG
+        conda activate tabkg
+        python main.py --method crkg --data $dataset --ensemble "gpt,gpt,gpt,gpt,gpt" --temp_range "0.1,0.2,0.3,0.4,0.5
 
         cd ..
     done

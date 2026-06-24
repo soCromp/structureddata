@@ -64,6 +64,14 @@ class LLMFormatter(BaseFormatter):
         return meta
 
 
+class TabKGFormatter(BaseFormatter):
+    def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
+        return df
+    
+    def format_metadata(self, meta: Dict[str, Any]) -> Dict[str, Any]:
+        return meta
+
+
 class TabDLMFormatter(BaseFormatter):
     """TabDLM."""
     def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
@@ -147,8 +155,8 @@ class UnifiedDataLoader:
     """The main orchestrator for the benchmark pipeline."""
     
     
-    DATASETS = ["honeypot", "caida", "clinicaltrials", "nexrad", "lob", "opencorporates", "moma"]
-    MODEL_TYPES = ["tabdiff", "llm", "tabdlm", "tabby", "gan"]
+    DATASETS = ["honeypot", "stroke", "cern", "lob", "moma", "olist", 'bayesian']
+    MODEL_TYPES = ["tabdiff", "llm", "tabdlm", "tabby", "gan", "tabkg"]
 
 
     def __init__(self, dataset_name: str, target_model_type: str):
@@ -187,6 +195,7 @@ class UnifiedDataLoader:
                 
         else:
             if self.dataset_name == 'honeypot':
+                import numpy as np
                 import json
                 file_path = os.path.join(base_dir, 'data/raw/honeypot.json')
                 
@@ -203,6 +212,7 @@ class UnifiedDataLoader:
                 # Expand the parsed JSON dictionary into individual columns
                 payload_df = pd.json_normalize(df['payload'].apply(safe_parse))
                 df = pd.concat([df, payload_df], axis=1)
+                df.replace(['NaN', 'nan', 'None', 'null', '', ' '], np.nan, inplace=True)
                 
                 # Split the mixed-type 'source' array into distinct IP and Port columns
                 df['source_ip'] = df['source'].apply(lambda x: str(x[0]) if isinstance(x, list) and len(x) > 0 else "Missing")
@@ -219,7 +229,57 @@ class UnifiedDataLoader:
                 # Drop rows where the target variable is completely missing
                 df.dropna(subset=['pattern'], inplace=True)
                 
+                cols = ['pattern', 'source_ip', 'source_port', 'request_raw', 'request_url', 'attackerPort', 'victimPort', 'md5']
+                df = df[cols]
+                
                 # Chronological split
+                size = len(df)
+                df_train = df[:int(std_train_frac*size)]
+                df_val = df[int(std_train_frac*size):int((std_train_frac+std_val_frac)*size)]
+                df_test = df[int((std_train_frac+std_val_frac)*size):]
+                
+            elif self.dataset_name == 'stroke':
+                import kagglehub
+                
+                print("Pulling Stroke Prediction Medical dataset...")
+                path = kagglehub.dataset_download("fedesoriano/stroke-prediction-dataset")
+                
+                df = pd.read_csv(os.path.join(path, "healthcare-dataset-stroke-data.csv"))
+                
+                # Drop the meaningless patient ID to prevent memorization
+                df.drop(columns=['id'], inplace=True)
+                
+                # The 'bmi' column contains "N/A" strings instead of real NaNs.
+                # We force them to np.nan so your _force_dtypes function handles them correctly.
+                df['bmi'] = pd.to_numeric(df['bmi'], errors='coerce')
+                
+                # Drop rows where the target itself is missing (though rare here)
+                df.dropna(subset=['stroke'], inplace=True)
+                
+                # This dataset is static (no temporal component), so we shuffle it 
+                # before splitting to ensure even class distribution.
+                df = df.sample(random_state=42, frac=1.0).reset_index(drop=True)
+                
+                size = len(df)
+                df_train = df[:int(std_train_frac*size)]
+                df_val = df[int(std_train_frac*size):int((std_train_frac+std_val_frac)*size)]
+                df_test = df[int((std_train_frac+std_val_frac)*size):]
+                
+            elif self.dataset_name == 'cern':
+                import kagglehub
+                
+                print("Pulling CERN Electron Collision dataset...")
+                path = kagglehub.dataset_download("fedesoriano/cern-electron-collision-data")
+                
+                df = pd.read_csv(os.path.join(path, "dielectron.csv"))
+                
+                # arbitrary identifiers 
+                df.drop(columns=['Run', 'Event'], inplace=True, errors='ignore')
+                df.dropna(inplace=True)
+                
+                # downstream regressor will predict mass M
+                df = df.sample(random_state=42, frac=1.0).reset_index(drop=True)
+                
                 size = len(df)
                 df_train = df[:int(std_train_frac*size)]
                 df_val = df[int(std_train_frac*size):int((std_train_frac+std_val_frac)*size)]
@@ -227,7 +287,6 @@ class UnifiedDataLoader:
                 
             elif self.dataset_name == 'lob':
                 import kagglehub
-                from kagglehub import KaggleDatasetAdapter
                 gap = 120 # 2 hours to prevent leakage
                 df = kagglehub.dataset_load(
                     kagglehub.KaggleDatasetAdapter.PANDAS,
@@ -252,7 +311,7 @@ class UnifiedDataLoader:
                 df['system_time'] = pd.to_datetime(df['system_time'])
                 df['system_time'] = df['system_time'].dt.strftime('%Y-%m-%d %H:%M')
 
-                # ENGINEER THE TARGET LABEL
+                # making the regression target
                 k_horizon = 5
 
                 # shift(-5) pulls the price from 5 rows (minutes) in the future up to the current row
@@ -260,18 +319,6 @@ class UnifiedDataLoader:
 
                 # Drop the last 5 rows because they now have NaNs for the future return
                 df.dropna(subset=['future_return'], inplace=True)
-
-                # Discretize into the 3-class target label
-                alpha = 0.0002  # 2 basis points threshold (adjust if you want strict class balance)
-                conditions = [
-                    df['future_return'] > alpha,
-                    df['future_return'] < -alpha
-                ]
-                choices = ['Up', 'Down']
-                df['target_direction'] = np.select(conditions, choices, default='Stationary')
-
-                # Drop the continuous return so models don't memorize the math
-                df.drop(columns=['future_return'], inplace=True)
                 
                 size = len(df) - 2*gap
                 df_train = df[:int(std_train_frac*size)]
@@ -285,6 +332,7 @@ class UnifiedDataLoader:
                 df.drop(columns=cols_to_drop, inplace=True)
 
                 print(df_train.shape, df_val.shape, df_test.shape)
+            
             elif self.dataset_name == 'moma':
                 df = pd.read_csv(os.path.join(base_dir, 'data/raw/moma/collection/Artworks.csv'))
                 df.drop_duplicates(subset=['Title'], keep='first', inplace=True)
@@ -296,6 +344,93 @@ class UnifiedDataLoader:
                 df_train = df[:int(std_train_frac*len(df))]
                 df_val = df[int(std_train_frac*len(df)):int((std_train_frac+std_val_frac)*len(df))]
                 df_test = df[int((std_train_frac+std_val_frac)*len(df)):]
+            
+            elif self.dataset_name == 'olist':
+                import kagglehub
+                
+                print("Pulling Olist E-Commerce dataset...")
+                path = kagglehub.dataset_download("olistbr/brazilian-ecommerce")
+                
+                # Olist is relational, so we read and flatten the core tables
+                orders = pd.read_csv(os.path.join(path, "olist_orders_dataset.csv"))
+                items = pd.read_csv(os.path.join(path, "olist_order_items_dataset.csv"))
+                products = pd.read_csv(os.path.join(path, "olist_products_dataset.csv"))
+                reviews = pd.read_csv(os.path.join(path, "olist_order_reviews_dataset.csv"))
+                
+                print("Joining tables into a flat commerce schema...")
+                df = orders.merge(items, on='order_id', how='inner')
+                df = df.merge(products, on='product_id', how='left')
+                df = df.merge(reviews, on='order_id', how='left')
+                
+                df['product_name_length'] = df['product_name_lenght'] # typo in original data
+                df['product_description_length'] = df['product_description_lenght']
+                
+                cols_to_keep = [
+                    'review_score', 'price', 'freight_value', 
+                    'product_category_name', 'product_name_length', 
+                    'product_description_length', 'product_photos_qty',
+                    'order_status', 'order_purchase_timestamp', 
+                    'order_delivered_customer_date'
+                ]
+                df = df[cols_to_keep].dropna(subset=['freight_value'])
+                
+                # Chronological split to prevent temporal leakage
+                df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+                df = df.sort_values('order_purchase_timestamp').reset_index(drop=True)
+                
+                size = len(df)
+                df_train = df[:int(std_train_frac*size)]
+                df_val = df[int(std_train_frac*size):int((std_train_frac+std_val_frac)*size)]
+                df_test = df[int((std_train_frac+std_val_frac)*size):]
+            
+            elif self.dataset_name == 'bayesian':
+                import numpy as np
+                
+                print("Generating Pure Synthetic DAG (The Collider Trap)...")
+                # Set a strict seed so the benchmark is 100% reproducible
+                np.random.seed(42)
+                n_samples = 100000
+                
+                # 1. Independent Roots
+                x1 = np.random.normal(0, 1, n_samples)
+                x2 = np.random.normal(0, 1, n_samples)
+                
+                # 2. The Collider (X1 -> X3 <- X2)
+                # X1 and X2 are independent, but highly correlated given X3
+                x3 = x1 + x2 + np.random.normal(0, 0.1, n_samples)
+                
+                # 3. The Confounder (Drives both X5 and the Target)
+                x4_hidden = np.random.uniform(-3, 3, n_samples)
+                
+                # 4. The Non-Linear Proxy
+                # Models must learn a sine wave manifold, not just a Gaussian
+                x5 = np.sin(x4_hidden) + np.random.normal(0, 0.05, n_samples)
+                
+                # 5. The Categorical Noise
+                # A purely random string column to test if models get distracted
+                categories = ['Alpha', 'Beta', 'Gamma', 'Delta']
+                x6_cat = np.random.choice(categories, n_samples)
+                
+                # 6. The Target (Strict Logical Boundary)
+                # To get a 1, X3 must be positive AND the hidden confounder must be positive
+                prob = 1 / (1 + np.exp(-(x3 + x4_hidden)))
+                target = (prob > 0.5).astype(int)
+                
+                df = pd.DataFrame({
+                    'root_1': x1,
+                    'root_2': x2,
+                    'collider': x3,
+                    'proxy_sin': x5,
+                    'distractor_cat': x6_cat,
+                    'target_class': target
+                })
+                
+                # Because it's synthetic and math-based, order doesn't matter
+                size = len(df)
+                df_train = df[:int(std_train_frac*size)]
+                df_val = df[int(std_train_frac*size):int((std_train_frac+std_val_frac)*size)]
+                df_test = df[int((std_train_frac+std_val_frac)*size):]
+                
             else:
                 raise NotImplementedError(f"Loading for {self.dataset_name} not yet implemented")
             
@@ -329,10 +464,13 @@ class UnifiedDataLoader:
         """Returns the target column and task type (e.g., classification, regression)."""
         tasks = {
             "honeypot":         {"target": 'pattern', "type": "classification"},
-            "lob":              {"target": "target_direction", "type": "classification"},
-            "nexrad":           {"target": "is_severe_hail", "type": "classification"},
-            "clinicaltrials":   {"target": "study_status", "type": "classification"},
-            "moma":             {"target": "Department", "type": "classification"}
+            "stroke":           {"target": "stroke", "type": "classification"}, 
+            "cern":             {"target": "M", "type": "regression"},
+            "lob":              {"target": "future_return", "type": "regression"},
+            "moma":             {"target": "Department", "type": "classification"},
+            "olist":            {"target": "freight_value", "type": "regression"},
+            "bayesian":         {"target": "target_class", "type": "classification"},
+            # "nexrad":           {"target": "is_severe_hail", "type": "classification"},
         }
         meta = tasks[self.dataset_name]
         meta['dataset_name'] = self.dataset_name
@@ -414,6 +552,8 @@ class UnifiedDataLoader:
             return TabDLMFormatter()
         elif self.target_model_type == "tabby":
             return TabbyFormatter()
+        elif self.target_model_type == 'tabkg':
+            return TabKGFormatter()
 
 
     def get_train_data(self):
@@ -439,5 +579,5 @@ class UnifiedDataLoader:
 if __name__ == "__main__":
     # this is here for debugging 
     loader = UnifiedDataLoader(dataset_name=sys.argv[-1], target_model_type="llm")
-    print(loader.raw_train.shape, loader.raw_train.head(), loader.raw_train.dtypes,)
+    print(loader.raw_train.shape, loader.raw_train.head(), loader.raw_train.dtypes, sep='\n')
     
