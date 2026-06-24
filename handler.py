@@ -132,6 +132,7 @@ class GANFormatter(BaseFormatter):
     """CTGAN+"""
     def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
         all_valid_cols = meta['categorical'] + meta['continuous'] + meta['integer'] + meta['datetime']
+        all_valid_cols = meta.get('categorical', []) + meta.get('continuous', []) + meta.get('integer', []) + meta.get('datetime', [])
         print(f"dropping columns {set(df.columns)-set(all_valid_cols)} due to GAN limitation")
         df = df[all_valid_cols].copy() # prevent SettingWithCopyWarning
         
