@@ -109,7 +109,7 @@ def main(args):
     
     save_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'synth', args.dataset))
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "llm_icl.csv")
+    save_path = os.path.join(save_dir, "icl.csv")
     
     synth_df.to_csv(save_path, index=False)
     print(f"\nSuccessfully saved {len(synth_df)} synthetic records to {save_path}")
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, required=True, help="Dataset name")
     parser.add_argument("--num_samples", type=int, default=1000, help="Number of rows to generate")
     parser.add_argument("--k_shots", type=int, default=5, help="Number of in-context examples")
-    parser.add_argument("--model_id", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct", help="HuggingFace Model ID")
+    parser.add_argument("--model_id", type=str, default="meta-llama/Meta-Llama-3-8B", help="HuggingFace Model ID")
     parser.add_argument("--max_tokens", type=int, default=250, help="Max tokens to generate per row")
     parser.add_argument("--batch_size", type=int, default=8, help="Number of prompts to process simultaneously")
     
