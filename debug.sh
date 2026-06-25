@@ -26,7 +26,7 @@ for dataset in "${Datasets[@]}"; do
 
     cd ../ICL
     conda activate tabby
-    python run_icl.py --dataset "$dataset" --model_id /mnt/data/zoo/meta-llama/Meta-Llama-3-8B # only do one trial for ICL
+    python run_icl.py --dataset "$dataset" --model_id /mnt/data/zoo/meta-llama/Meta-Llama-3-8B --num_samples 30 # only do one trial for ICL
 
     cd ../tabby
     conda activate tabby
