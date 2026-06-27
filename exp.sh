@@ -34,7 +34,7 @@ for dataset in "${Datasets[@]}"; do
         
         python trainplain.py -t -p /mnt/data/sonia/sd/tabby/${dataset}/$i -d "$dataset" -mh -e 5 -n 0 -l1 --local
         python trainplain.py -p /mnt/data/sonia/sd/tabby/${dataset}/$i -d "$dataset" -mh -n 50 --local
-        cp /mnt/data/sonia/sd/tabby/${dataset}/$i/samples.csv ../../synth/"$dataset"/tabby_$i.csv
+        cp /mnt/data/sonia/sd/tabby/${dataset}/$i/samplesclean.csv ../../synth/"$dataset"/tabby_$i.csv
 
         cd ../TabDiff
         conda activate tabdiff
@@ -54,7 +54,7 @@ for dataset in "${Datasets[@]}"; do
 
         cd ../TabKG
         conda activate tabkg # need to also run VLLM
-        python main.py --method crkg --data $dataset --ensemble "gpt,gpt,gpt,gpt,gpt" --temp_range "0.1,0.2,0.3,0.4,0.5
+        python main.py --method crkg --data $dataset --ensemble "gpt,gpt,gpt,gpt,gpt" --temp_range "0.1,0.2,0.3,0.4,0.5"
         cp results/${dataset}/CRKG_FilteredOutput.csv ../../synth/"$dataset"/tabkg_$i.csv
 
         cd ..

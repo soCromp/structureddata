@@ -1,7 +1,7 @@
 #!/bin/bash
 # run from structureddata dir
 
-Datasets=("lob" "moma")
+Datasets=("honeypot" "stroke" "cern" "lob" "moma" "olist" "bayesian")
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate sd
 
@@ -19,7 +19,6 @@ done
 
 cd ..
 for dataset in "${Datasets[@]}"; do
-    # ctganp (runs all 3 trials)
     cd CTAB-GAN-Plus
     conda activate ctganp 
     python run_ctganp.py 1 "$dataset"
@@ -32,7 +31,7 @@ for dataset in "${Datasets[@]}"; do
     conda activate tabby
     python trainplain.py -t -p /mnt/data/sonia/sd/tabby/${dataset}/debug -d "$dataset" -mh -e 1 -n 0 -l1 --local
     python trainplain.py -p /mnt/data/sonia/sd/tabby/${dataset}/debug -d "$dataset" -mh -n 50 --local
-    cp /mnt/data/sonia/sd/tabby/${dataset}/debug/samples.csv ../../synth/"$dataset"/tabby_debug.csv
+    cp /mnt/data/sonia/sd/tabby/${dataset}/debug/samplesclean.csv ../../synth/"$dataset"/tabby_debug.csv
 
     cd ../TabDiff
     conda activate tabdiff
@@ -52,7 +51,7 @@ for dataset in "${Datasets[@]}"; do
 
     cd ../TabKG
     conda activate tabkg # need to also run VLLM
-    python main.py --method crkg --data $dataset --ensemble "gpt,gpt,gpt,gpt,gpt" --temp_range "0.1,0.2,0.3,0.4,0.5
+    python main.py --method crkg --data $dataset --ensemble "gpt,gpt,gpt,gpt,gpt" --temp_range "0.1,0.2,0.3,0.4,0.5"
     cp results/${dataset}/CRKG_FilteredOutput.csv ../../synth/"$dataset"/tabkg_debug.csv
 
     cd ..

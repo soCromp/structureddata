@@ -6,6 +6,7 @@ import torch
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from tqdm import tqdm
 import json
+import re 
 
 # Add the parent directory to sys.path so we can import handler.py
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -21,14 +22,17 @@ def parse_generated_text(text, columns):
     """Attempts to parse the LLM's JSON output."""
     parsed_row = {col: None for col in columns}
     try:
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start != -1 and end != 0:
-            json_str = text[start:end]
+        # start = text.find('{')
+        # end = text.rfind('}') + 1
+        match = re.search(r'\{.*?\}', text, re.DOTALL) # non greedy
+        if match is not None:
+            json_str =match.group(0)
             data = json.loads(json_str)
             for k, v in data.items():
                 if k in columns:
                     parsed_row[k] = v
+        else: 
+            print(f"\n[DEBUG] JSON Parse Failed!\nMatch was none\nRaw LLM Output:\n{text}\n{'-'*40}")
     except json.JSONDecodeError as e:
         print(f"\n[DEBUG] JSON Parse Failed!\nError: {e}\nRaw LLM Output:\n{text}\n{'-'*40}")
         pass 
@@ -46,6 +50,8 @@ def build_prompt(train_df, columns, k_shots=5):
     samples = train_df.sample(k_shots)
     for _, row in samples.iterrows():
         prompt += serialize_row(row, columns) + "\n"
+        
+    print(prompt)
         
     prompt += "\nNow generate exactly one new record in the exact same JSON format:\n"
     # seed the generation with the opening brace to force JSON mode
@@ -89,7 +95,7 @@ def main(args):
     out_batches = generator(
         prompts, 
         max_new_tokens=1500,
-        temperature=0.1, 
+        temperature=0.6, 
         do_sample=True,
         return_full_text=False,
         batch_size=args.batch_size
