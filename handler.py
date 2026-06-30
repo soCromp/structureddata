@@ -109,7 +109,7 @@ class TabbyFormatter(BaseFormatter):
         os.makedirs(datadir, exist_ok=True)
         
         ords = [col for col in meta['columns'] if col in \
-            set(meta['categorical'] + meta['text'] + meta['datetime']) and col != meta['target']]
+            set(meta['categorical']) and col != meta['target']]
         nums = [col for col in meta['columns'] if col in \
             set(meta['continuous'] + meta['integer']) and col != meta['target']]
         
@@ -283,6 +283,8 @@ class UnifiedDataLoader:
                 # arbitrary identifiers 
                 df.drop(columns=['Run', 'Event'], inplace=True, errors='ignore')
                 df.dropna(inplace=True)
+                
+                df.columns = [name+'_' for name in df.columns]
                 
                 # downstream regressor will predict mass M
                 df = df.sample(random_state=42, frac=1.0).reset_index(drop=True)
