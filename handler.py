@@ -284,7 +284,7 @@ class UnifiedDataLoader:
                 df.drop(columns=['Run', 'Event'], inplace=True, errors='ignore')
                 df.dropna(inplace=True)
                 
-                df.columns = [name+'_' for name in df.columns]
+                df.columns = [name.strip()+'_' for name in df.columns]
                 
                 # downstream regressor will predict mass M
                 df = df.sample(random_state=42, frac=1.0).reset_index(drop=True)
