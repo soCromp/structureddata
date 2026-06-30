@@ -35,7 +35,7 @@ for dataset in "${Datasets[@]}"; do
 
     cd ../TabDiff
     conda activate tabdiff
-    python run_tabdiff.py --dataset $dataset --mode train
+    python main.py --dataset $dataset --mode train
     python main.py --dataname $dataset --mode test --report --no_wandb
     cp synthetic/${dataset}/test.csv ../../synth/${dataset}/tabdiff_debug.csv
 

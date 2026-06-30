@@ -36,7 +36,8 @@ class TabDiffFormatter(BaseFormatter):
             col in set(meta['continuous'] + meta['integer']) and col != meta['target']]
         cats = [i for i, col in enumerate(cols) if \
             col in set(meta['categorical']) and col != meta['target']]
-        targets = [i for i, col in enumerate(cols) if col in set(meta['target'])]
+        targets = [i for i, col in enumerate(cols) if meta['target']==col]
+        print(targets)
         td_meta = {
             "name": meta['dataset_name'],
             "task_type": 'regression' if meta['type']=='regression' else 'binclass', # binclass or regression
@@ -474,7 +475,7 @@ class UnifiedDataLoader:
         tasks = {
             "honeypot":         {"target": 'pattern', "type": "classification"},
             "stroke":           {"target": "stroke", "type": "classification"}, 
-            "cern":             {"target": "M", "type": "regression"},
+            "cern":             {"target": "M_", "type": "regression"},
             "lob":              {"target": "future_return", "type": "regression"},
             "moma":             {"target": "Department", "type": "classification"},
             "olist":            {"target": "freight_value", "type": "regression"},
