@@ -5,10 +5,15 @@
 ### Environment 
 ```bash
 conda create --name sd python==3.12
+conda activate sd
 pip install pandas kagglehub[pandas-datasets]
 ```
 
 ### Steps to run
+Install git LFS first if you don't have it: <br>
+https://gist.github.com/pourmand1376/bc48a407f781d6decae316a5cfa7d8ab
+
+
 ```bash
 chmod +x acquisition.sh
 ./acquisition.sh
