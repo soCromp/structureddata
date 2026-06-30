@@ -32,8 +32,8 @@ for dataset in "${Datasets[@]}"; do
         cd ../tabby
         conda activate tabby
         
-        python trainplain.py -t -p /mnt/data/sonia/sd/tabby/${dataset}/$i -d "$dataset" -mh -e 5 -n 0 -l1 --local
-        python trainplain.py -p /mnt/data/sonia/sd/tabby/${dataset}/$i -d "$dataset" -mh -n 50 --local
+        python trainplain.py -t -p /mnt/data/sonia/sd/tabby/${dataset}/$i -d "$dataset" -mh -e 5 -n 0 -l1 --local  -eff
+        python trainplain.py -p /mnt/data/sonia/sd/tabby/${dataset}/$i -d "$dataset" -mh -n 50 --local -l1 -eff
         cp /mnt/data/sonia/sd/tabby/${dataset}/$i/samplesclean.csv ../../synth/"$dataset"/tabby_$i.csv
 
         cd ../TabDiff
