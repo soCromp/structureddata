@@ -3,6 +3,7 @@ import sys
 import argparse
 import pandas as pd 
 import torch
+from torch.utils.data import Dataset
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from tqdm import tqdm
 import json
@@ -17,6 +18,17 @@ def serialize_row(row, columns):
     # convert all values to strings to prevent JSON serialization errors with dates/floats
     row_dict = {col: str(row[col]) for col in columns}
     return json.dumps(row_dict)
+
+class PromptDataset(Dataset):
+    """Wraps the prompts list so the HF pipeline streams them lazily."""
+    def __init__(self, prompts):
+        self.prompts = prompts
+
+    def __len__(self):
+        return len(self.prompts)
+
+    def __getitem__(self, idx):
+        return self.prompts[idx]
 
 def parse_generated_text(text, columns):
     """Attempts to parse the LLM's JSON output."""
@@ -51,7 +63,7 @@ def build_prompt(train_df, columns, k_shots=5):
     for _, row in samples.iterrows():
         prompt += serialize_row(row, columns) + "\n"
         
-    print(prompt)
+    # print(prompt)
         
     prompt += "\nNow generate exactly one new record in the exact same JSON format:\n"
     # seed the generation with the opening brace to force JSON mode
@@ -88,20 +100,21 @@ def main(args):
 
     print(f"Pre-building {args.num_samples} prompts...")
     prompts = [build_prompt(train_df, columns, k_shots=args.k_shots) for _ in range(args.num_samples)]
+    prompt_dataset = PromptDataset(prompts)
 
     synthetic_rows = []
     print(f"Generating {args.num_samples} synthetic rows using batch size {args.batch_size}...")
     
-    out_batches = generator(
-        prompts, 
+    out_batch_stream = generator(
+        prompt_dataset, 
         max_new_tokens=1500,
-        temperature=0.6, 
+        temperature=args.temperature, 
         do_sample=True,
         return_full_text=False,
         batch_size=args.batch_size
     )
     
-    for output in tqdm(out_batches, total=args.num_samples):
+    for output in tqdm(out_batch_stream, total=args.num_samples):
         raw_text = output[0]['generated_text'].strip()
         
         # reattach the seeded opening brace
@@ -125,6 +138,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, required=True, help="Dataset name")
     parser.add_argument("--num_samples", type=int, default=1000, help="Number of rows to generate")
     parser.add_argument("--k_shots", type=int, default=5, help="Number of in-context examples")
+    parser.add_argument("--temperature", type=float, default=0.6, help="Sampling temperature")
     parser.add_argument("--model_id", type=str, default="meta-llama/Meta-Llama-3-8B", help="HuggingFace Model ID")
     parser.add_argument("--max_tokens", type=int, default=250, help="Max tokens to generate per row")
     parser.add_argument("--batch_size", type=int, default=8, help="Number of prompts to process simultaneously")
