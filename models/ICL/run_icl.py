@@ -43,10 +43,10 @@ def parse_generated_text(text, columns):
             for k, v in data.items():
                 if k in columns:
                     parsed_row[k] = v
-        else: 
-            print(f"\n[DEBUG] JSON Parse Failed!\nMatch was none\nRaw LLM Output:\n{text}\n{'-'*40}")
+    #     else: 
+    #         print(f"\n[DEBUG] JSON Parse Failed!\nMatch was none\nRaw LLM Output:\n{text}\n{'-'*40}")
     except json.JSONDecodeError as e:
-        print(f"\n[DEBUG] JSON Parse Failed!\nError: {e}\nRaw LLM Output:\n{text}\n{'-'*40}")
+    #     print(f"\n[DEBUG] JSON Parse Failed!\nError: {e}\nRaw LLM Output:\n{text}\n{'-'*40}")
         pass 
         
     return parsed_row
