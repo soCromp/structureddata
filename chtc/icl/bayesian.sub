@@ -19,6 +19,6 @@ request_disk = 100GB
 request_gpus = 1
 require_gpus = (GlobalMemoryMB >= 48000)
 +WantGPULab = true
-+GPUJobLength = "medium"
++GPUJobLength = "short"
 
-queue 1
+queue 3

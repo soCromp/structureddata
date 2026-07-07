@@ -21,4 +21,4 @@ require_gpus = (GlobalMemoryMB >= 48000)
 +WantGPULab = true
 +GPUJobLength = "medium"
 
-queue 1
+queue 3
