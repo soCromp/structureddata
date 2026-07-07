@@ -203,7 +203,7 @@ def objective(trial, dataset, model_type):
         cmd = [
             "python", "models/ICL/run_icl.py",
             "--dataset", dataset,
-            "--num_samples", "2000",
+            "--num_samples", "50",
             "--k_shots", str(k_shots),
             "--temperature", str(temperature),
             "--model_id", "/mnt/data/zoo/meta-llama/Meta-Llama-3-8B"
@@ -244,12 +244,18 @@ def objective(trial, dataset, model_type):
 if __name__ == "__main__":
     target_dataset = sys.argv[1] # e.g., 'olist'
     target_model = sys.argv[2].lower()   # e.g., 'tabby'
+    if len(sys.argv) == 3:
+        drive = ''
+    else:
+        drive = sys.argv[3]
+        os.makedirs(drive, exist_ok=True)
     
     # Create the Optuna study
     study_name = f"hpo_{target_model}_{target_dataset}"
+    study_path = os.path.join(drive, study_name)
     
     # We use SQLite so if the cluster crashes, you don't lose your HP progress!
-    storage_url = f"sqlite:///{study_name}.db"
+    storage_url = f"sqlite:///{study_path}.db"
     storage = RDBStorage(
         url=storage_url,
         engine_kwargs={"connect_args": {"timeout": 60.0}} # prevent lock issues
