@@ -1,6 +1,6 @@
 container_image = docker://sncromp/tabbyds:0
 universe = container
-executable = run_optuna_worker.sh
+executable = ../run_optuna_worker.sh
 
 dataset = lob
 model = tabdiff 
