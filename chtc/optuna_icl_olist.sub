@@ -16,5 +16,4 @@ request_memory = 16GB
 request_disk = 20GB
 request_gpus = 1
 
-# THE MAGIC LINE: This tells CHTC to spawn 20 independent jobs using the exact setup above
 queue 20

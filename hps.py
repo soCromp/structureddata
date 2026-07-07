@@ -1,10 +1,13 @@
+import os
+# Must be set before importing numpy/scipy/torch to prevent MKL symbol crashes
+os.environ["MKL_THREADING_LAYER"] = "GNU"
+
 import optuna
 from optuna.storages import RDBStorage
 import subprocess
 import pandas as pd
 import numpy as np
 from scipy.stats import ks_2samp
-import os
 import sys
 
 # Import your existing loader to get the real data
@@ -137,6 +140,10 @@ def calculate_fast_proxy(real_df, synth_df, dataset_name):
     total_score = avg_ks_distance + penalty
     print(f"Trial Score: {total_score:.4f} (KS: {avg_ks_distance:.4f}, Penalty: {penalty:.4f})")
     
+    if np.isnan(total_score):
+        return 100.0
+        
+    return total_score
 
 
 def objective(trial, dataset, model_type):
@@ -170,9 +177,11 @@ def objective(trial, dataset, model_type):
             "--local", "-l1", "-eff"
         ]
         
-        # Run sequentially
-        subprocess.run(train_cmd, check=True)
-        subprocess.run(sample_cmd, check=True)
+        cmds = [train_cmd, sample_cmd]
+        
+        # # Run sequentially
+        # subprocess.run(train_cmd, check=True)
+        # subprocess.run(sample_cmd, check=True)
         
         # Read directly from the checkpoint directory, not the synth directory
         synth_path = f"{checkpoint_dir}/samplesclean.csv"
@@ -182,6 +191,7 @@ def objective(trial, dataset, model_type):
         batch_size = trial.suggest_categorical("batch_size", [500, 1000, 2000])
         # You would need to temporarily modify run_ctganp.py to accept batch_size as an arg
         cmd = ["python", "models/CTAB-GAN-Plus/run_ctganp.py", "1", dataset, "--bs", str(batch_size)]
+        cmds = [cmd]
         synth_path = f"synth/{dataset}/ctganp_optuna_{trial.number}.csv"
         
         
@@ -198,17 +208,18 @@ def objective(trial, dataset, model_type):
             "--temperature", str(temperature),
             "--model_id", "/mnt/data/zoo/meta-llama/Meta-Llama-3-8B"
         ]
+        cmds = [cmd]
         
         synth_path = f"synth/{dataset}/icl.csv"
-        subprocess.run(cmd, check=True)
         
 
     # --- 2. Execute the Training Script ---
     print(f"\n--- Starting Trial {trial.number} for {model_type} on {dataset} ---")
     
     try:
-        # Run the bash command. This blocks until the model finishes training and sampling
-        subprocess.run(cmd, check=True, capture_output=False)
+        for cmd in cmds:
+            # Run the bash command. This blocks until the model finishes training and sampling
+            subprocess.run(cmd, check=True, capture_output=False)
         
         # NOTE: You must ensure your training script saves the micro-sample to `synth_path`
         synth_df = pd.read_csv(synth_path)
@@ -257,8 +268,11 @@ if __name__ == "__main__":
     else:
         study.optimize(lambda t: objective(t, target_dataset, target_model), n_trials=5)
     
-    print("\n=== Best Hyperparameters Found ===")
-    print(study.best_params)
-    print(f"Best Score: {study.best_value}")
-    
+    completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    if len(completed_trials) > 0:
+        print("\n=== Best Hyperparameters Found ===")
+        print(study.best_params)
+        print(f"Best Score: {study.best_value}")
+    else:
+        print("\n[WARNING] No trials completed successfully. Check logs for errors.")
     
