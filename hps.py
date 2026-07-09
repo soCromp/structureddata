@@ -203,10 +203,10 @@ def objective(trial, dataset, model_type):
         cmd = [
             "python", "models/ICL/run_icl.py",
             "--dataset", dataset,
-            "--num_samples", "50",
+            "--num_samples", "200",
             "--k_shots", str(k_shots),
             "--temperature", str(temperature),
-            "--model_id", "/mnt/data/zoo/meta-llama/Meta-Llama-3-8B"
+            "--model_id", "/staging/groups/cs_geodes/zoo/Meta-Llama-3-8B"
         ]
         cmds = [cmd]
         
