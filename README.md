@@ -6,7 +6,7 @@
 ```bash
 conda create --name sd python==3.12
 conda activate sd
-pip install pandas kagglehub[pandas-datasets]
+pip install pandas kagglehub[pandas-datasets] optuna
 ```
 
 ### Steps to run
