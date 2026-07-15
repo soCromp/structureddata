@@ -3,15 +3,30 @@ import os
 os.environ["MKL_THREADING_LAYER"] = "GNU"
 
 import optuna
-from optuna.storages import RDBStorage
+# from optuna.storages import RDBStorage
+from optuna.storages import JournalStorage, JournalFileStorage, JournalFileSymlinkLock
 import subprocess
 import pandas as pd
 import numpy as np
 from scipy.stats import ks_2samp
 import sys
+import math
 
-# Import your existing loader to get the real data
 from handler import UnifiedDataLoader
+
+SEARCH_SPACES = {
+    'tabby': {
+        "lr": [1e-5, 5e-5, 1e-4, 5e-4, 1e-3],
+        "model": ['l1']
+    },
+    'ctganp': {
+        "batch_size": [500, 1000, 2000]
+    },
+    'icl': {
+        "k_shots": [5],
+        "temperature": [0.2, 0.6, 1.0]
+    }
+}
 
 def calculate_fast_proxy(real_df, synth_df, dataset_name):
     """
@@ -147,58 +162,48 @@ def calculate_fast_proxy(real_df, synth_df, dataset_name):
 
 
 def objective(trial, dataset, model_type):
-    """
-    The core Optuna loop. It samples HPs, runs your existing code, and scores it.
-    """
-    # --- 1. Sample Hyperparameters based on Model Type ---
+    cwd = None
+    space = SEARCH_SPACES[model_type] # Grab the dictionary for this model
+    
     if model_type == 'tabby':
-        lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-        epochs = trial.suggest_int("epochs", 1, 5)
+        lr = trial.suggest_categorical("lr", space["lr"])
+        model = trial.suggest_categorical("model", space["model"])
+        max_epochs = 10
+        if dataset == 'cern':
+            max_epochs = 3
+        elif dataset == 'olist':
+            max_epochs = 4
+        elif dataset == 'bayesian':
+            max_epochs = 7
         
-        checkpoint_dir = f"/mnt/data/sonia/sd/tabby/{dataset}/optuna_{trial.number}"
+        checkpoint_dir = f"/staging/c/cromp/sd/tabby/{dataset}/optuna_{trial.number}"
         
-        # 1. Train Command
-        train_cmd = [
-            "python", "models/tabby/trainplain.py",
+        traincmd = [
+            "python", "trainplain.py",
             "-t", 
             "-p", checkpoint_dir,
             "-d", dataset,
-            "-e", str(epochs),
-            "-l1", str(lr),
-            "--local", "-eff"
+            "-e", str(max_epochs),
+            "-lr", str(lr),
+            f"-{model}", 
+            "--local", "-eff", "-mh",
+            '-n', '200',
         ]
         
-        # 2. Sample Command (Assuming this reads from the checkpoint and outputs samplesclean.csv)
-        sample_cmd = [
-            "python", "models/tabby/trainplain.py",
-            "-p", checkpoint_dir,
-            "-d", dataset,
-            "-n", "50", # or however many you need for the micro-sample
-            "--local", "-l1", "-eff"
-        ]
-        
-        cmds = [train_cmd, sample_cmd]
-        
-        # # Run sequentially
-        # subprocess.run(train_cmd, check=True)
-        # subprocess.run(sample_cmd, check=True)
-        
-        # Read directly from the checkpoint directory, not the synth directory
+        cmds = [traincmd]
+        cwd = 'models/tabby'
         synth_path = f"{checkpoint_dir}/samplesclean.csv"
         
-        
     elif model_type == 'ctganp':
-        batch_size = trial.suggest_categorical("batch_size", [500, 1000, 2000])
-        # You would need to temporarily modify run_ctganp.py to accept batch_size as an arg
+        batch_size = trial.suggest_categorical("batch_size", space["batch_size"])
+        
         cmd = ["python", "models/CTAB-GAN-Plus/run_ctganp.py", "1", dataset, "--bs", str(batch_size)]
         cmds = [cmd]
         synth_path = f"synth/{dataset}/ctganp_optuna_{trial.number}.csv"
         
-        
     elif model_type == 'icl':
-        # Lock k_shots but sweep three distinct entropy levels
-        k_shots = trial.suggest_categorical("k_shots", [5])
-        temperature = trial.suggest_categorical("temperature", [0.2, 0.6, 1.0])
+        k_shots = trial.suggest_categorical("k_shots", space["k_shots"])
+        temperature = trial.suggest_categorical("temperature", space["temperature"])
         
         cmd = [
             "python", "models/ICL/run_icl.py",
@@ -209,30 +214,14 @@ def objective(trial, dataset, model_type):
             "--model_id", "/staging/groups/cs_geodes/zoo/Meta-Llama-3-8B"
         ]
         cmds = [cmd]
-        
         synth_path = f"synth/{dataset}/icl.csv"
         
-
-    # --- 2. Execute the Training Script ---
     print(f"\n--- Starting Trial {trial.number} for {model_type} on {dataset} ---")
     
-    try:
-        for cmd in cmds:
-            # Run the bash command. This blocks until the model finishes training and sampling
-            subprocess.run(cmd, check=True, capture_output=False)
-        
-        # NOTE: You must ensure your training script saves the micro-sample to `synth_path`
-        synth_df = pd.read_csv(synth_path)
-        
-    except subprocess.CalledProcessError as e:
-        # If the model OOMs or crashes, tell Optuna to abandon this hyperparameter branch
-        raise optuna.TrialPruned()
-    except FileNotFoundError:
-        print("Model failed to output CSV.")
-        raise optuna.TrialPruned()
-
-    # --- 3. Evaluate the Fast Proxy ---
-    # Load the real dataset from your existing handler cache
+    for cmd in cmds:
+        subprocess.run(cmd, cwd=cwd, check=True, capture_output=False)
+    
+    synth_df = pd.read_csv(synth_path)
     loader = UnifiedDataLoader(dataset_name=dataset, target_model_type="llm")
     real_df = loader.get_train_data()
     
@@ -248,31 +237,31 @@ if __name__ == "__main__":
         drive = ''
     else:
         drive = sys.argv[3]
-        os.makedirs(drive, exist_ok=True)
+        # os.makedirs(drive, exist_ok=True)
     
     # Create the Optuna study
     study_name = f"hpo_{target_model}_{target_dataset}"
-    study_path = os.path.join(drive, study_name)
+    study_path = os.path.join(drive, f'{study_name}.log')
     
-    # We use SQLite so if the cluster crashes, you don't lose your HP progress!
-    storage_url = f"sqlite:///{study_path}.db"
-    storage = RDBStorage(
-        url=storage_url,
-        engine_kwargs={"connect_args": {"timeout": 60.0}} # prevent lock issues
-    )
+    # Force the NFS-safe Symlink lock
+    lock = JournalFileSymlinkLock(filepath=study_path)
     
+    # Wrap in Optuna's Journal backend
+    storage = JournalStorage(JournalFileStorage(study_path, lock_obj=lock))
+    
+    search_space = SEARCH_SPACES.get(target_model, {})
+    total_trials = math.prod([len(values) for values in search_space.values()]) if search_space else 1
+    
+    sampler = optuna.samplers.GridSampler(search_space)
     study = optuna.create_study(
         study_name=study_name,
         direction="minimize", # We want the lowest KS distance + lowest penalty
         storage=storage,
+        sampler=sampler,
         load_if_exists=True
     )
     
-    # Run 5 trials (1 for ICL)
-    if target_model == 'icl':
-        study.optimize(lambda t: objective(t, target_dataset, target_model), n_trials=1)
-    else:
-        study.optimize(lambda t: objective(t, target_dataset, target_model), n_trials=5)
+    study.optimize(lambda t: objective(t, target_dataset, target_model), n_trials=total_trials)
     
     completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     if len(completed_trials) > 0:

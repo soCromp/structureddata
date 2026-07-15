@@ -13,6 +13,7 @@ output = logs/optuna_$(model)_$(dataset)_$(Cluster)_$(Process).out
 should_transfer_files = YES
 transfer_input_files = /home/cromp/sd-project/structureddata.tar.gz
 
+requirements = (CUDACapability >= 4) && (Target.HasCHTCStaging == True)
 request_cpus = 1
 request_memory = 64GB
 request_disk = 100GB
@@ -21,4 +22,4 @@ require_gpus = (GlobalMemoryMB >= 48000)
 +WantGPULab = true
 +GPUJobLength = "medium"
 
-queue 3
+queue 5

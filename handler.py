@@ -114,11 +114,23 @@ class TabbyFormatter(BaseFormatter):
         nums = [col for col in meta['columns'] if col in \
             set(meta['continuous'] + meta['integer']) and col != meta['target']]
         
+        max_col_length = 50
+        if meta['dataset_name'] == 'moma' or meta['dataset_name'] == 'olist':
+            max_col_length = 20
+        elif meta['dataset_name'] == 'honeypot':
+            max_col_length = 100
+        elif meta['dataset_name'] == 'cern':
+            max_col_length = 15
+        elif meta['dataset_name'] == 'bayesian':
+            max_col_length = 27
+        elif meta['dataset_name'] == 'lob':
+            max_col_length = 30
+        
         tabby_meta = {
             'dataset_name': meta['dataset_name'],
             'task': meta['type'],
             'creation_time': 'latest',
-            'max_col_length': 50,
+            'max_col_length': max_col_length,
             'cols': meta['columns'],
             'ords': ords,
             'nums': nums,
