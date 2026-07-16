@@ -185,7 +185,7 @@ def objective(trial, dataset, model_type):
         model = trial.suggest_categorical("model", space["model"])
         max_epochs = 10
         if dataset == 'cern':
-            max_epochs = 3
+            max_epochs = 2
         elif dataset == 'olist':
             max_epochs = 4
         elif dataset == 'bayesian':
