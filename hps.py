@@ -25,6 +25,21 @@ SEARCH_SPACES = {
     'icl': {
         "k_shots": [5],
         "temperature": [0.2, 0.6, 1.0]
+    },
+    'tabdiff': {
+        "diffusion_steps": [100, 500, 1000],
+        "lr": [1e-5, 1e-4, 1e-3],
+        "batch_size": [128, 256, 512]
+    },
+    'tabdlm': {
+        "lr": [1e-4, 1e-3, 1e-2],
+        "dropout": [0.1, 0.3, 0.5],
+        "hidden_dim": [128, 256, 512]
+    },
+    'tabkg': {
+        "embedding_dim": [32, 64, 128],
+        "lr": [1e-4, 1e-3, 5e-3],
+        "epochs": [20, 50, 100]
     }
 }
 
@@ -197,9 +212,9 @@ def objective(trial, dataset, model_type):
     elif model_type == 'ctganp':
         batch_size = trial.suggest_categorical("batch_size", space["batch_size"])
         
-        cmd = ["python", "models/CTAB-GAN-Plus/run_ctganp.py", "1", dataset, "--bs", str(batch_size)]
+        cmd = ["python", "models/CTAB-GAN-Plus/run_ctganp.py", dataset, "--bs", str(batch_size)]
         cmds = [cmd]
-        synth_path = f"synth/{dataset}/ctganp_optuna_{trial.number}.csv"
+        synth_path = f"synth/{dataset}/ctganp_0.csv"
         
     elif model_type == 'icl':
         k_shots = trial.suggest_categorical("k_shots", space["k_shots"])
@@ -215,6 +230,54 @@ def objective(trial, dataset, model_type):
         ]
         cmds = [cmd]
         synth_path = f"synth/{dataset}/icl.csv"
+        
+    elif model_type == 'tabdiff':
+        steps = trial.suggest_categorical("diffusion_steps", space["diffusion_steps"])
+        lr = trial.suggest_categorical("lr", space["lr"])
+        bs = trial.suggest_categorical("batch_size", space["batch_size"])
+        
+        cmd = [
+            "python", "models/TabDiff/run_tabdiff.py",
+            "--dataset", dataset,
+            "--steps", str(steps),
+            "--lr", str(lr),
+            "--batch_size", str(bs)
+        ]
+        cmds = [cmd]
+        cwd = 'models/TabDiff'
+        synth_path = f"synth/{dataset}/tabdiff_optuna_{trial.number}.csv"
+
+    elif model_type == 'tabdlm':
+        lr = trial.suggest_categorical("lr", space["lr"])
+        dropout = trial.suggest_categorical("dropout", space["dropout"])
+        hidden_dim = trial.suggest_categorical("hidden_dim", space["hidden_dim"])
+        
+        cmd = [
+            "python", "models/TabDLM/run_tabdlm.py",
+            "--dataset", dataset,
+            "--lr", str(lr),
+            "--dropout", str(dropout),
+            "--hidden_dim", str(hidden_dim)
+        ]
+        cmds = [cmd]
+        cwd = 'models/TabDLM'
+        synth_path = f"synth/{dataset}/tabdlm_optuna_{trial.number}.csv"
+
+    elif model_type == 'tabkg':
+        emb_dim = trial.suggest_categorical("embedding_dim", space["embedding_dim"])
+        lr = trial.suggest_categorical("lr", space["lr"])
+        epochs = trial.suggest_categorical("epochs", space["epochs"])
+        
+        cmd = [
+            "python", "models/TabKG/run_tabkg.py",
+            "--dataset", dataset,
+            "--embedding_dim", str(emb_dim),
+            "--lr", str(lr),
+            "--epochs", str(epochs)
+        ]
+        cmds = [cmd]
+        cwd = 'models/TabKG'
+        synth_path = f"synth/{dataset}/tabkg_optuna_{trial.number}.csv"
         
     print(f"\n--- Starting Trial {trial.number} for {model_type} on {dataset} ---")
     
