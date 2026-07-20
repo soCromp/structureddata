@@ -44,13 +44,13 @@ for dataset in "${Datasets[@]}"; do
 
         cd ../TabDLM
         conda activate tabdlm
-        PYTHONPATH=. python main.py train --dataset_name $dataset --description "_tabdlm" \
-                    --epochs 1 --batch_size 1 --batch_accum 128 --lora_r 4 --lora_alpha 128 \
-                    --answer_len 160 --loss_type no_divide_pmask --bf16 
-        PYTHONPATH=. python main.py sample --dataset_name $dataset --description "_tabdlm" \
-                    --save_description "_tabdlm_synth" --do_sampling --bf16 --use_best_ckp \
-                    --gen_length 160 --block_length 160 --sample_step 160 --temperature 1.0 \
-                    --sample_batch_size 8 --seed $i 
+        TOKENIZERS_PARALLELISM=false PYTHONPATH=. python main.py train --dataset_name $dataset \
+                    --description "_tabdlm" --epochs 10 --batch_size 32 --batch_accum 32 \
+                    --loss_type no_divide_pmask  --lora_r 16 --lora_alpha 64 --bf16
+        TOKENIZERS_PARALLELISM=false PYTHONPATH=. python main.py sample --dataset_name $dataset \
+                    --description "_tabdlm" --save_description "_tabdlm_synth" --do_sampling \
+                    --use_best_ckp --temperature 1.0 --sample_batch_size 32 --seed $i --proportion 200
+        cp result/${dataset}/synthetic_result/_tabdlm_tabdlm_synth.csv ../../synth/${dataset}/tabdlm_$i.csv
 
         cd ../TabKG
         conda activate tabkg # need to also run VLLM
