@@ -253,13 +253,20 @@ def objective(trial, dataset, model_type):
     elif model_type == 'tabdlm':
         batch_accum = trial.suggest_categorical("batch_accum", space["batch_accum"])
         
+        if dataset in ['stroke', 'cern', 'olist', 'bayesian']:
+            batch_size = 32
+        elif dataset == 'lob':
+            batch_size = 16
+        elif dataset in ['moma', 'honeypot']:
+            batch_size = 2
+        
         cmdtrain = [
             "python", "main.py", 
             "train",
             "--dataset_name", dataset,
             "--description", "_tabdlm",
             "--epochs", "15",
-            "--batch_size", "1",
+            "--batch_size", str(batch_size),
             "--batch_accum", str(batch_accum),
             "--lora_r", "4",
             "--lora_alpha", "128",
@@ -273,11 +280,19 @@ def objective(trial, dataset, model_type):
             "--dataset_name", dataset,
             "--description", "_tabdlm",
             "--save_description", "_tabdlm_synth",
-            "--do_sampling", "--bf16", "--use_best_ckp",
+            "--do_sampling", "--bf16",
             "--gen_length", "90", "--block_length", "90",
             "--sample_step", "90", "--temperature", "1.0",
-            "--sample_batch_size", "8", "--seed", str(0)
+            "--sample_batch_size", "32", "--seed", str(0),
+            "--n", "200"
         ]
+    #     TOKENIZERS_PARALLELISM=false PYTHONPATH=. python main.py train --dataset_name $dataset \
+    #             --description "_tabdlm" --epochs 1 --batch_size 2 --batch_accum 32 \
+    #             --loss_type no_divide_pmask  --lora_r 16 --lora_alpha 64 --bf16
+    # TOKENIZERS_PARALLELISM=false PYTHONPATH=. python main.py sample --dataset_name $dataset \
+    #             --description "_tabdlm" --save_description "_tabdlm_synth" --do_sampling \
+    #             --temperature 1.0 --sample_batch_size 32 --seed 1 --n 32
+        
         cmds = [cmdtrain, cmdsample]
         cwd = 'models/TabDLM'
         synth_path = f"synth/{dataset}/tabdlm_optuna_{trial.number}.csv"
