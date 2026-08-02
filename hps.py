@@ -295,7 +295,7 @@ def objective(trial, dataset, model_type):
         
         cmds = [cmdtrain, cmdsample]
         cwd = 'models/TabDLM'
-        synth_path = f"synth/{dataset}/tabdlm_optuna_{trial.number}.csv"
+        synth_path = f"models/TabDLM/result/{dataset}/synthetic_result/_tabdlm_{trial.number}_tabdlm_synth_{trial.number}.csv"
 
     elif model_type == 'tabkg':
         temp_range = trial.suggest_categorical("temp_range", space["temp_range"])
