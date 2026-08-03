@@ -82,6 +82,7 @@ class TabDLMFormatter(BaseFormatter):
         
         # must be num then cat then text (target wherever)
         df = df[meta['continuous'] + meta['integer'] + meta['categorical'] + meta['text']]
+        df['id'] = np.arange(len(df))
         
         df.to_csv(os.path.join(datadir, f'{split}.csv'), index=False)
         return df

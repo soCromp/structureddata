@@ -32,14 +32,14 @@ SEARCH_SPACES = {
         "batch_size": [128, 256, 512]
     },
     'tabdlm': {
-        "lr": [1e-4, 1e-3, 1e-2],
-        "dropout": [0.1, 0.3, 0.5],
-        "hidden_dim": [128, 256, 512]
+        "batch_accum": [4, 8, 16],
     },
     'tabkg': {
-        "embedding_dim": [32, 64, 128],
-        "lr": [1e-4, 1e-3, 5e-3],
-        "epochs": [20, 50, 100]
+        "temp_range": [
+            "0.1,0.2,0.3,0.4,0.5",
+            "0.3,0.4,0.5,0.6,0.7",
+            "0.6,0.7,0.8,0.9,1.0"
+        ]
     }
 }
 
@@ -232,59 +232,96 @@ def objective(trial, dataset, model_type):
         synth_path = f"synth/{dataset}/icl.csv"
         
     elif model_type == 'tabdiff':
-        steps = trial.suggest_categorical("diffusion_steps", space["diffusion_steps"])
-        lr = trial.suggest_categorical("lr", space["lr"])
-        bs = trial.suggest_categorical("batch_size", space["batch_size"])
+        # steps = trial.suggest_categorical("diffusion_steps", space["diffusion_steps"])
+        # lr = trial.suggest_categorical("lr", space["lr"])
+        # bs = trial.suggest_categorical("batch_size", space["batch_size"])
         
-        cmd = [
-            "python", "models/TabDiff/run_tabdiff.py",
-            "--dataset", dataset,
-            "--steps", str(steps),
-            "--lr", str(lr),
-            "--batch_size", str(bs)
+        cmdtrain = [
+            "python", "main.py",
+            "--dataname", dataset,
+            "--mode", "train",
         ]
-        cmds = [cmd]
+        cmdtest = [
+            "python", "main.py",
+            "--dataname", dataset,
+            "--mode", "test", "--no_wandb"
+        ]
+        cmds = [cmdtrain, cmdtest]
         cwd = 'models/TabDiff'
-        synth_path = f"synth/{dataset}/tabdiff_optuna_{trial.number}.csv"
+        synth_path = f"models/TabDiff/synthetic/{dataset}/test.csv"
 
     elif model_type == 'tabdlm':
-        lr = trial.suggest_categorical("lr", space["lr"])
-        dropout = trial.suggest_categorical("dropout", space["dropout"])
-        hidden_dim = trial.suggest_categorical("hidden_dim", space["hidden_dim"])
+        batch_accum = trial.suggest_categorical("batch_accum", space["batch_accum"])
         
-        cmd = [
-            "python", "models/TabDLM/run_tabdlm.py",
-            "--dataset", dataset,
-            "--lr", str(lr),
-            "--dropout", str(dropout),
-            "--hidden_dim", str(hidden_dim)
+        if dataset in ['stroke', 'cern', 'olist', 'bayesian']:
+            batch_size = 32
+        elif dataset == 'lob':
+            batch_size = 16
+        elif dataset in ['moma', 'honeypot']:
+            batch_size = 2
+        
+        cmdtrain = [
+            "python", "main.py", 
+            "train",
+            "--dataset_name", dataset,
+            "--description", f"_tabdlm_{trial.number}",
+            "--epochs", "15",
+            "--batch_size", str(batch_size),
+            "--batch_accum", str(batch_accum),
+            "--lora_r", "4",
+            "--lora_alpha", "128",
+            "--answer_len", "90",
+            "--loss_type", "no_divide_pmask",
+            "--bf16"
         ]
-        cmds = [cmd]
+        cmdsample = [
+            "python", "main.py",
+            "sample",
+            "--dataset_name", dataset,
+            "--description", f"_tabdlm_{trial.number}",
+            "--save_description", f"_tabdlm_synth_{trial.number}",
+            "--do_sampling", "--bf16",
+            "--gen_length", "90", "--block_length", "90",
+            "--sample_step", "90", "--temperature", "1.0",
+            "--sample_batch_size", "32", "--seed", str(0),
+            "--n", "200"
+        ]
+    #     TOKENIZERS_PARALLELISM=false PYTHONPATH=. python main.py train --dataset_name $dataset \
+    #             --description "_tabdlm" --epochs 1 --batch_size 2 --batch_accum 32 \
+    #             --loss_type no_divide_pmask  --lora_r 16 --lora_alpha 64 --bf16
+    # TOKENIZERS_PARALLELISM=false PYTHONPATH=. python main.py sample --dataset_name $dataset \
+    #             --description "_tabdlm" --save_description "_tabdlm_synth" --do_sampling \
+    #             --temperature 1.0 --sample_batch_size 32 --seed 1 --n 32
+        
+        cmds = [cmdtrain, cmdsample]
         cwd = 'models/TabDLM'
-        synth_path = f"synth/{dataset}/tabdlm_optuna_{trial.number}.csv"
+        synth_path = f"models/TabDLM/result/{dataset}/synthetic_result/_tabdlm_{trial.number}_tabdlm_synth_{trial.number}.csv"
 
     elif model_type == 'tabkg':
-        emb_dim = trial.suggest_categorical("embedding_dim", space["embedding_dim"])
-        lr = trial.suggest_categorical("lr", space["lr"])
-        epochs = trial.suggest_categorical("epochs", space["epochs"])
+        temp_range = trial.suggest_categorical("temp_range", space["temp_range"])
         
         cmd = [
-            "python", "models/TabKG/run_tabkg.py",
-            "--dataset", dataset,
-            "--embedding_dim", str(emb_dim),
-            "--lr", str(lr),
-            "--epochs", str(epochs)
+            "python", "main.py",
+            "--data", dataset,
+            "--method", "crkg",
+            "--ensemble", "gpt,gpt,gpt,gpt,gpt",
+            "--temp_range", temp_range,
+            '--id', str(trial.number)
         ]
+
         cmds = [cmd]
         cwd = 'models/TabKG'
-        synth_path = f"synth/{dataset}/tabkg_optuna_{trial.number}.csv"
+        synth_path = f"models/TabKG/results/{dataset}/CRKG_FilteredOutput_{trial.number}.csv"
         
     print(f"\n--- Starting Trial {trial.number} for {model_type} on {dataset} ---")
     
     for cmd in cmds:
         subprocess.run(cmd, cwd=cwd, check=True, capture_output=False)
     
-    synth_df = pd.read_csv(synth_path)
+    try:
+        synth_df = pd.read_csv(synth_path)
+    except FileNotFoundError:
+        return 1000
     loader = UnifiedDataLoader(dataset_name=dataset, target_model_type="llm")
     real_df = loader.get_train_data()
     
