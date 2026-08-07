@@ -20,7 +20,7 @@ SEARCH_SPACES = {
         "model": ['l1']
     },
     'ctganp': {
-        "batch_size": [500, 1000, 2000]
+        "batch_size": [128, 256, 512]
     },
     'icl': {
         "k_shots": [5],
@@ -211,11 +211,12 @@ def objective(trial, dataset, model_type):
         
     elif model_type == 'ctganp':
         batch_size = trial.suggest_categorical("batch_size", space["batch_size"])
-        
-        cmd = ["python", "models/CTAB-GAN-Plus/run_ctganp.py", dataset, "--bs", str(batch_size)]
+
+        cmd = ["python", "run_ctganp.py", dataset, "--bs", str(batch_size)]
         cmds = [cmd]
+        cwd = 'models/CTAB-GAN-Plus'
         synth_path = f"synth/{dataset}/ctganp_0.csv"
-        
+
     elif model_type == 'icl':
         k_shots = trial.suggest_categorical("k_shots", space["k_shots"])
         temperature = trial.suggest_categorical("temperature", space["temperature"])
