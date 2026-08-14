@@ -268,7 +268,7 @@ def objective(trial, dataset, model_type):
             "--description", f"_tabdlm_{trial.number}",
             "--epochs", "15",
             "--batch_size", str(batch_size),
-            "--batch_accum", str(batch_accum),
+            "--batch_accum", str(batch_size*batch_accum),
             "--lora_r", "4",
             "--lora_alpha", "128",
             "--answer_len", "90",
