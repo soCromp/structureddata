@@ -32,10 +32,15 @@ class TabDiffFormatter(BaseFormatter):
                                'models/TabDiff/data/Info')
         cols = [col for col in meta['columns'] if \
             col in set(meta['categorical'] + meta['integer'] + meta['continuous'] + [meta['target']])]
-        nums = [i for i, col in enumerate(cols) if \
-            col in set(meta['continuous'] + meta['integer']) and col != meta['target']]
-        cats = [i for i, col in enumerate(cols) if \
-            col in set(meta['categorical']) and col != meta['target']]
+        if meta['dataset_name'] == 'cern':
+            nums = [i for i, col in enumerate(cols) if \
+                col in set(meta['continuous'] + meta['integer'] + meta['categorical']) and col != meta['target']]
+            cats = [] 
+        else:
+            nums = [i for i, col in enumerate(cols) if \
+                col in set(meta['continuous'] + meta['integer']) and col != meta['target']]
+            cats = [i for i, col in enumerate(cols) if \
+                col in set(meta['categorical']) and col != meta['target']]
         targets = [i for i, col in enumerate(cols) if meta['target']==col]
         print(targets)
         td_meta = {
