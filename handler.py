@@ -86,7 +86,7 @@ class TabDLMFormatter(BaseFormatter):
         os.makedirs(datadir, exist_ok=True)
         
         # must be num then cat then text (target wherever)
-        df = df[meta['continuous'] + meta['integer'] + meta['categorical'] + meta['text']]
+        df = df[meta['continuous'] + meta['integer'] + meta['categorical'] + meta['text'] + meta['datetime']]
         df['id'] = np.arange(len(df))
         
         df.to_csv(os.path.join(datadir, f'{split}.csv'), index=False)
@@ -95,7 +95,7 @@ class TabDLMFormatter(BaseFormatter):
     
     def format_metadata(self, meta: Dict[str, Any]) -> Dict[str, Any]:
         meta['nums'] = meta['continuous'] + meta['integer']
-        meta['columns'] = meta['continuous'] + meta['integer'] + meta['categorical'] + meta['text']
+        meta['columns'] = meta['continuous'] + meta['integer'] + meta['categorical'] + meta['text'] + meta['datetime']
         meta['type'] = 'binclass' if meta['type'] == 'classification' else 'regression'
         return meta
 
@@ -151,7 +151,7 @@ class GANFormatter(BaseFormatter):
     """CTGAN+"""
     def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
         all_valid_cols = meta.get('categorical', []) + meta.get('continuous', []) + meta.get('integer', []) + meta.get('datetime', [])
-        print(f"dropping columns {set(df.columns)-set(all_valid_cols)} due to GAN limitation")
+        # print(f"dropping columns {set(df.columns)-set(all_valid_cols)} due to GAN limitation")
         df = df[all_valid_cols].copy() # prevent SettingWithCopyWarning
         
         if len(meta.get('datetime', [])) > 0:
