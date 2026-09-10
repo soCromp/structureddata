@@ -21,8 +21,23 @@ class TabDiffFormatter(BaseFormatter):
                                'models/TabDiff/data', meta['dataset_name'])
         os.makedirs(datadir, exist_ok=True)
         cols = [col for col in meta['columns'] if \
-            col in set(meta['categorical'] + meta['integer'] + meta['continuous'] + [meta['target']])]
+            col in set(meta['categorical'] + meta['integer'] + meta['continuous'] + meta['datetime'] + [meta['target']])]
         df = df[cols] # so this doesn't change relative ordering but removes non categorical text
+        if len(meta.get('datetime', [])) > 0:
+            # 1. Force a hard copy of the DataFrame to break any view/slice references
+            df = df.copy()
+            
+            for col in meta['datetime']:
+                # 2. Extract to a standalone series to guarantee the datetime cast applies
+                temp_dt = pd.to_datetime(df[col], errors='coerce')
+                is_missing = temp_dt.isna()
+                
+                # 3. Fill NaTs on the standalone series, cast to epoch seconds
+                epoch_series = temp_dt.fillna(pd.Timestamp("1970-01-01")).astype('int64') // 10**9
+                epoch_series = epoch_series.astype(float)
+                
+                # 5. Assign the safe, purely numerical series back to the DataFrame
+                df[col] = epoch_series
         df.to_csv(os.path.join(datadir, f'{split}.csv'), index=False)
     
     
@@ -31,14 +46,14 @@ class TabDiffFormatter(BaseFormatter):
         metadir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                'models/TabDiff/data/Info')
         cols = [col for col in meta['columns'] if \
-            col in set(meta['categorical'] + meta['integer'] + meta['continuous'] + [meta['target']])]
+            col in set(meta['categorical'] + meta['integer'] + meta['continuous'] + meta['datetime'] + [meta['target']])]
         if meta['dataset_name'] == 'cern':
             nums = [i for i, col in enumerate(cols) if \
                 col in set(meta['continuous'] + meta['integer'] + meta['categorical']) and col != meta['target']]
             cats = [] 
         else:
             nums = [i for i, col in enumerate(cols) if \
-                col in set(meta['continuous'] + meta['integer']) and col != meta['target']]
+                col in set(meta['continuous'] + meta['integer'] + meta['datetime']) and col != meta['target']]
             cats = [i for i, col in enumerate(cols) if \
                 col in set(meta['categorical']) and col != meta['target']]
         targets = [i for i, col in enumerate(cols) if meta['target']==col]
@@ -608,4 +623,4 @@ if __name__ == "__main__":
     # this is here for debugging 
     loader = UnifiedDataLoader(dataset_name=sys.argv[-1], target_model_type="llm")
     print(loader.raw_train.shape, loader.raw_train.head(), loader.raw_train.dtypes, sep='\n')
-    
+    print(loader._get_task_metadata())

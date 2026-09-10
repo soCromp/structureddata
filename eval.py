@@ -21,6 +21,7 @@ from model.eval.evaluation import get_utility_metrics, stat_sim, privacy_metrics
 from multimodal_realism import evaluate_multimodal_realism
 from mle import evaluate_mle
 from manual import evaluate_domain_constraints
+from dcr import evaluate_multimodal_dcr
 
 # The complete benchmark suite
 DATASETS = ['honeypot', 'stroke', 'cern', 'lob', 'moma', 'olist', 'bayesian']
@@ -107,6 +108,24 @@ def evaluate_run(dataset_name, model_name, trial_num, synth_file_path):
         except Exception as e:
             print(f"  [!] Tier 4 Domain Constraint evaluation failed: {e}")
             domain_results = {"Constraint_Violation_Rate": np.nan}
+            
+        # ---------------------------------------------------------------------
+        # MULTIMODAL PRIVACY & MEMORIZATION (DCR)
+        # ---------------------------------------------------------------------
+        try:
+            expected_text_cols = [c for c in KNOWN_TEXT_COLS if c in real_df.columns]
+            
+            dcr_results = evaluate_multimodal_dcr(
+                real_train_df=real_df,
+                synth_df=fake_df,
+                real_test_df=real_test_df,
+                categorical_cols=categorical_cols,
+                continuous_cols=continuous_cols,
+                text_cols=expected_text_cols
+            )
+        except Exception as e:
+            print(f"  [!] Multimodal DCR evaluation failed: {e}")
+            dcr_results = {"DCR_Synth": np.nan, "DCR_Baseline": np.nan}
 
         # ---------------------------------------------------------------------
         # COMPILE ALL METRICS
@@ -118,6 +137,7 @@ def evaluate_run(dataset_name, model_name, trial_num, synth_file_path):
             **multimodal_results,
             **mle_results,
             **domain_results,
+            **dcr_results,
         }
         return metrics
 
@@ -164,6 +184,10 @@ if __name__ == "__main__":
         for col in numeric_cols:
             results_df[col] = pd.to_numeric(results_df[col], errors='coerce')
             
+        # LOWER BOUND R^2: Treat predictions worse than the mean as 0 predictive utility
+        if 'MLE_R2' in results_df.columns:
+            results_df['MLE_R2'] = results_df['MLE_R2'].clip(lower=0.0)
+            
         # Extract means and standard deviations
         means = results_df.groupby(['Dataset', 'Model'], observed=True)[numeric_cols].mean()
         stds = results_df.groupby(['Dataset', 'Model'], observed=True)[numeric_cols].std().fillna(0.0)
@@ -193,6 +217,7 @@ if __name__ == "__main__":
             print(f"  [!] Failed to generate summary text file: {e}")
 
         # 3. Generate LaTeX Tables for Paper
+        # 3. Generate LaTeX Tables for Paper
         try:
             print("Generating LaTeX tables...")
             latex_file = "evaluation_tables.tex"
@@ -220,7 +245,6 @@ if __name__ == "__main__":
                     exp = int(np.floor(np.log10(max_val)))
                     m_base = m / (10**exp)
                     s_base = s / (10**exp)
-                    # If standard deviation is 0, format it cleanly
                     if s == 0:
                         inner_str = f"{m_base:.2f} \\times 10^{{{exp}}} \\pm 0.00"
                     else:
@@ -232,14 +256,19 @@ if __name__ == "__main__":
                     return f"$\\bf{{{inner_str}}}$"
                 return f"${inner_str}$"
 
-            # 1. Define specific dataset subsets for the specialized tables
-            # Maintain the original DATASETS order
-            class_datasets = [d for d in DATASETS if d in ['honeypot', 'stroke', 'moma', 'bayesian']]
-            reg_datasets = [d for d in DATASETS if d in ['cern', 'lob', 'olist']]
-            constraint_datasets = [d for d in DATASETS if d not in ['moma', 'stroke']]
+            # Map datasets to their respective evaluation metric for the unified MLE table
+            mle_task_metrics = {
+                'honeypot': 'MLE_Accuracy',
+                'stroke': 'MLE_Accuracy',
+                'cern': 'MLE_R2',
+                'lob': 'MLE_R2',
+                'moma': 'MLE_Accuracy',
+                'olist': 'MLE_R2',
+                'bayesian': 'MLE_Accuracy'
+            }
 
-            # 2. Helper function to generate any LaTeX table dynamically
-            def write_latex_table(f, metric_name, dataset_list, caption, label):
+            # Helper function for standard metric tables
+            def write_latex_table(f, metric_name, dataset_list, caption, label, baseline_metric=None):
                 f.write(f"% ==========================================\n")
                 f.write(f"% Table for {metric_name}\n")
                 f.write(f"% ==========================================\n")
@@ -282,27 +311,92 @@ if __name__ == "__main__":
                             row_data.append("-")
                             
                     f.write(" & ".join(row_data) + " \\\\\n")
+
+                # Insert Baseline Row if specified
+                if baseline_metric:
+                    f.write("\\midrule\n")
+                    row_data = ["\\textit{Baseline (Test)}"]
+                    for dataset in dataset_list:
+                        if dataset in means.index.get_level_values(0):
+                            dataset_baselines = means.loc[dataset, baseline_metric].dropna()
+                            if not dataset_baselines.empty:
+                                m_base = dataset_baselines.mean()
+                                row_data.append(f"\\textit{{{m_base:.2f}}}")
+                            else:
+                                row_data.append("-")
+                        else:
+                            row_data.append("-")
+                    f.write(" & ".join(row_data) + " \\\\\n")
                     
                 f.write("\\bottomrule\n\\end{tabular}\n")
                 f.write(f"\\caption{{{caption}}}\n")
                 f.write(f"\\label{{{label}}}\n")
                 f.write("\\end{table}\n\n\n")
 
-            # 3. Generate all tables
             with open(latex_file, "w") as f:
                 
-                # Write specialized tables
-                write_latex_table(f, 'MLE_Accuracy', class_datasets, 
-                                  'Downstream ML Efficacy (Accuracy) for classification tasks.', 'tab:mle_class')
+                # --- 1. GENERATE UNIFIED MLE TABLE ---
+                f.write(f"% ==========================================\n")
+                f.write(f"% Unified Downstream ML Efficacy (Accuracy & R^2)\n")
+                f.write(f"% ==========================================\n")
+                f.write("\\begin{table}[h]\n\\centering\n")
                 
-                write_latex_table(f, 'MLE_RMSE', reg_datasets, 
-                                  'Downstream ML Efficacy (RMSE) for regression tasks.', 'tab:mle_reg')
+                col_format = "l" + "c" * len(DATASETS)
+                f.write(f"\\begin{{tabular}}{{{col_format}}}\n\\toprule\n")
                 
+                header = ["Model"] + [d.capitalize() for d in DATASETS]
+                f.write(" & ".join(header) + " \\\\\n\\midrule\n")
+                
+                best_unified_model = {}
+                for dataset in DATASETS:
+                    metric = mle_task_metrics.get(dataset)
+                    if dataset in means.index.get_level_values(0) and metric:
+                        dataset_means = means.loc[dataset, metric].dropna()
+                        
+                        if 'tabkg' in dataset_means.index:
+                            dataset_means = dataset_means.drop('tabkg')
+                            
+                        if not dataset_means.empty:
+                            # Both Accuracy and R2 are higher-is-better metrics
+                            best_unified_model[dataset] = dataset_means.idxmax()
+                
+                for model in MODELS:
+                    display_name = MODEL_DISPLAY_NAMES.get(model, model)
+                    row_data = [display_name]
+                    for dataset in DATASETS:
+                        metric = mle_task_metrics.get(dataset)
+                        try:
+                            m = means.loc[(dataset, model), metric]
+                            s = stds.loc[(dataset, model), metric]
+                            is_best = best_unified_model.get(dataset) == model
+                            row_data.append(format_latex_cell(m, s, is_best))
+                        except KeyError:
+                            row_data.append("-")
+                            
+                    f.write(" & ".join(row_data) + " \\\\\n")
+                    
+                f.write("\\bottomrule\n\\end{tabular}\n")
+                f.write("\\caption{Downstream ML Efficacy. We report Accuracy for classification tasks and $R^2$ for regression tasks. Higher is better.}\n")
+                f.write("\\label{tab:mle_unified}\n")
+                f.write("\\end{table}\n\n\n")
+
+                # --- 2. GENERATE REMAINING TABLES ---
+                constraint_datasets = [d for d in DATASETS if d not in ['moma', 'stroke']]
+
                 write_latex_table(f, 'Constraint_Violation_Rate', constraint_datasets, 
                                   'Domain Constraint Violation Rate (Lower is better).', 'tab:constraints')
 
-                # Write standard tables for all remaining metrics across all datasets
-                skip_metrics = ['MLE_Accuracy', 'MLE_RMSE', 'Constraint_Violation_Rate']
+                write_latex_table(f, 'DCR_Synth', DATASETS, 
+                                  'Distance to Closest Record (DCR). TabKG scores of $0.00$ indicate catastrophic training data memorization. The \\textit{Baseline} row represents the DCR of the held-out test set, representing ideal generalization without regurgitation.', 
+                                  'tab:dcr_synth',
+                                  baseline_metric='DCR_Baseline')
+
+                write_latex_table(f, 'Joint_FID', DATASETS, 
+                                  'Joint Fréchet Distance (FID) across multimodal embeddings. Note the extreme unbounded values for models hallucinating outside the continuous manifold, demonstrating instability for heterogeneous tabular evaluation.', 
+                                  'tab:joint_fid_appendix')
+
+                # Skip specialized metrics so they aren't generated twice by the fallback loop
+                skip_metrics = ['MLE_Accuracy', 'MLE_RMSE', 'MLE_R2', 'Constraint_Violation_Rate', 'DCR_Synth', 'DCR_Baseline', 'Joint_FID']
                 
                 for metric in numeric_cols:
                     if metric in skip_metrics:
@@ -321,3 +415,4 @@ if __name__ == "__main__":
 
     else:
         print("\n[!] No synthetic data files were found. Please check the SYNTH_DIR path.")
+        

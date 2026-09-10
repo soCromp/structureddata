@@ -11,6 +11,7 @@ import numpy as np
 from scipy.stats import ks_2samp
 import sys
 import math
+import shutil
 
 from handler import UnifiedDataLoader
 
@@ -26,10 +27,8 @@ SEARCH_SPACES = {
         "k_shots": [5],
         "temperature": [0.2, 0.6, 1.0]
     },
-    'tabdiff': {
-        "diffusion_steps": [100, 500, 1000],
+    'tabdiff': {    
         "lr": [1e-5, 1e-4, 1e-3],
-        "batch_size": [128, 256, 512]
     },
     'tabdlm': {
         "batch_accum": [4, 8, 16],
@@ -212,7 +211,7 @@ def objective(trial, dataset, model_type):
     elif model_type == 'ctganp':
         batch_size = trial.suggest_categorical("batch_size", space["batch_size"])
 
-        cmd = ["python", "run_ctganp.py", dataset, "--bs", str(batch_size)]
+        cmd = ["python", "run_ctganp.py", dataset, "--bs", str(batch_size), "--id", str(trial.number)]
         cmds = [cmd]
         cwd = 'models/CTAB-GAN-Plus'
         synth_path = f"synth/{dataset}/ctganp_0.csv"
@@ -233,19 +232,27 @@ def objective(trial, dataset, model_type):
         synth_path = f"synth/{dataset}/icl.csv"
         
     elif model_type == 'tabdiff':
-        # steps = trial.suggest_categorical("diffusion_steps", space["diffusion_steps"])
-        # lr = trial.suggest_categorical("lr", space["lr"])
-        # bs = trial.suggest_categorical("batch_size", space["batch_size"])
+        lr = trial.suggest_categorical("lr", space["lr"])
+        
+        # lr gets specified in a config file we need to make. copy over from template
+        source_file = "models/TabDiff/tabdiff/configs/hps_tabdiff_configs.toml"
+        dest_file = "models/TabDiff/tabdiff/configs/tabdiff_configs.toml"
+        shutil.copy2(source_file, dest_file)
+        with open(dest_file, "a") as file: # append the lr 
+            file.write(f"lr = {str(lr)}\n")
         
         cmdtrain = [
-            "python", "main.py",
+            sys.executable, "main.py",
             "--dataname", dataset,
             "--mode", "train",
+            "--exp_name", f"hps_{str(trial.number)}",
         ]
         cmdtest = [
-            "python", "main.py",
+            sys.executable, "main.py",
             "--dataname", dataset,
-            "--mode", "test", "--no_wandb"
+            "--mode", "test", "--no_wandb",
+            "--exp_name", f"hps_{str(trial.number)}",
+            "--ckpt_path", f'./tabdiff/ckpt/{dataset}/hps_{str(trial.number)}/model_8000.pt'
         ]
         cmds = [cmdtrain, cmdtest]
         cwd = 'models/TabDiff'
@@ -317,7 +324,8 @@ def objective(trial, dataset, model_type):
     print(f"\n--- Starting Trial {trial.number} for {model_type} on {dataset} ---")
     
     for cmd in cmds:
-        subprocess.run(cmd, cwd=cwd, check=True, capture_output=False)
+        subprocess.run(cmd, cwd=cwd, check=True, capture_output=False,
+            env=os.environ.copy())
     
     try:
         synth_df = pd.read_csv(synth_path)
