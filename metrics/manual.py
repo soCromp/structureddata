@@ -46,16 +46,30 @@ def evaluate_domain_constraints(synth_df, dataset_name):
 
         elif dataset_name == 'lob':
             # CONSTRAINT: Financial Order Book Bounds
-            # Distances (prices) and Notional Volumes cannot physically fall below zero.
-            distance_cols = [c for c in synth_df.columns if 'distance' in c]
+            # 1. Notional Volumes cannot physically fall below zero.
+            # 2. Ask distances (from mid-price) must be non-negative (above mid).
+            # 3. Bid distances (from mid-price) must be non-positive (below mid).
             notional_cols = [c for c in synth_df.columns if 'notional' in c]
+            ask_dist_cols = [c for c in synth_df.columns if 'asks_distance' in c]
+            bid_dist_cols = [c for c in synth_df.columns if 'bids_distance' in c]
             
-            if distance_cols and notional_cols:
-                dist_viol = (synth_df[distance_cols].apply(pd.to_numeric, errors='coerce').fillna(0) < 0).any(axis=1)
-                not_viol = (synth_df[notional_cols].apply(pd.to_numeric, errors='coerce').fillna(0) < 0).any(axis=1)
+            violation_mask = pd.Series(False, index=synth_df.index)
+            
+            if notional_cols:
+                # Fills NaN with -1 to guarantee structural failures are flagged as violations
+                not_viol = (synth_df[notional_cols].apply(pd.to_numeric, errors='coerce').fillna(-1) < 0).any(axis=1)
+                violation_mask = violation_mask | not_viol
                 
-                violation_mask = dist_viol | not_viol
-                violations['Negative_Volume_Price_Violation'] = violation_mask.mean()
+            if ask_dist_cols:
+                ask_viol = (synth_df[ask_dist_cols].apply(pd.to_numeric, errors='coerce').fillna(-1) < 0).any(axis=1)
+                violation_mask = violation_mask | ask_viol
+                
+            if bid_dist_cols:
+                # Fills NaN with 1 to guarantee structural failures are flagged as violations
+                bid_viol = (synth_df[bid_dist_cols].apply(pd.to_numeric, errors='coerce').fillna(1) > 0).any(axis=1)
+                violation_mask = violation_mask | bid_viol
+                
+            violations['Negative_Volume_Price_Violation'] = violation_mask.mean()
 
         elif dataset_name == 'bayesian':
             # CONSTRAINT: Strict Deterministic Addition (The Collider Trap)

@@ -1,55 +1,45 @@
 import os
-import sys
 import warnings
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
 
 warnings.filterwarnings('ignore')
 
 from handler import UnifiedDataLoader
 
-import dython.nominal
-if not hasattr(dython.nominal, 'compute_associations'):
-    def compute_associations_shim(*args, **kwargs):
-        kwargs['compute_only'] = True
-        return dython.nominal.associations(*args, **kwargs)['corr']
-    dython.nominal.compute_associations = compute_associations_shim
-sys.path.append(os.path.abspath("models/CTAB-GAN-Plus"))
-from model.eval.evaluation import get_utility_metrics, stat_sim, privacy_metrics
-
-from multimodal_realism import evaluate_multimodal_realism
-from mle import evaluate_mle
-from manual import evaluate_domain_constraints
-from dcr import evaluate_multimodal_dcr
+from metrics.multimodal_realism import evaluate_multimodal_realism
+from metrics.mle import evaluate_mle
+from metrics.manual import evaluate_domain_constraints
+from metrics.dcr import evaluate_multimodal_dcr
 
 # The complete benchmark suite
-DATASETS = ['honeypot', 'stroke', 'cern', 'lob', 'moma', 'olist', 'bayesian']
-MODELS = ['tabby', 'ctganp', 'icl', 'tabdiff', 'tabdlm', 'tabkg']
+DATASETS = ['honeypot', 'stroke', 'moma', 'bayesian', 'cern', 'lob', 'olist']
+MODELS = ['ctganp', 'tabdiff', 'tabdlm',  'icl', 'tabby',  'tabkg']
 TRIALS = [1, 2, 3]
 
+
 # The single directory containing all outputs
-SYNTH_DIR = "/home/sonia/samples"
+SYNTH_DIR = "../samples"
 RESULTS_FILE = "final_evaluation_results.csv"
 
-# Known freeform/unstructured text fields across datasets
-KNOWN_TEXT_COLS = ['Title', 'request_raw']
 
+def evaluate(dataset_name, fake_df):
+    # Capture the true generated row count prior to evaluation subsampling
+        total_synth_rows = len(fake_df)
 
-def evaluate_run(dataset_name, model_name, trial_num, synth_file_path):
-    print(f"Evaluating {model_name} on {dataset_name} (Trial {trial_num})...")
-
-    try:
-        fake_df = pd.read_csv(synth_file_path)
         if len(fake_df) > 2000:
             fake_df = fake_df.iloc[-2000:]
+
         loader = UnifiedDataLoader(dataset_name=dataset_name, target_model_type="llm")
         real_df = loader.get_train_data()
         meta = loader.get_metadata()
 
         categorical_cols = list(meta.get('categorical', []))
         continuous_cols = list(meta.get('continuous', []))
+        text_cols = list(meta.get('text', []))
+        
         categorical_cols = [c for c in categorical_cols if c not in continuous_cols and c in real_df.columns]
+        expected_text_cols = [c for c in text_cols if c in real_df.columns]
 
         # ---------------------------------------------------------------------
         # 1. EVALUATE MULTIMODAL REALISM (CROSS-MODAL JOINT FIDELITY)
@@ -58,8 +48,6 @@ def evaluate_run(dataset_name, model_name, trial_num, synth_file_path):
         try:
             real_mm = real_df.copy()
             fake_mm = fake_df.copy()
-
-            expected_text_cols = [c for c in KNOWN_TEXT_COLS if c in real_mm.columns]
 
             for text_col in expected_text_cols:
                 if text_col not in fake_mm.columns:
@@ -110,11 +98,9 @@ def evaluate_run(dataset_name, model_name, trial_num, synth_file_path):
             domain_results = {"Constraint_Violation_Rate": np.nan}
             
         # ---------------------------------------------------------------------
-        # MULTIMODAL PRIVACY & MEMORIZATION (DCR)
+        # MULTIMODAL PRIVACY & MEMORIZATION (DCR & EXACT MATCH)
         # ---------------------------------------------------------------------
         try:
-            expected_text_cols = [c for c in KNOWN_TEXT_COLS if c in real_df.columns]
-            
             dcr_results = evaluate_multimodal_dcr(
                 real_train_df=real_df,
                 synth_df=fake_df,
@@ -125,15 +111,18 @@ def evaluate_run(dataset_name, model_name, trial_num, synth_file_path):
             )
         except Exception as e:
             print(f"  [!] Multimodal DCR evaluation failed: {e}")
-            dcr_results = {"DCR_Synth": np.nan, "DCR_Baseline": np.nan}
+            dcr_results = {
+                "DCR_Synth": np.nan, "DCR_Baseline": np.nan,
+                "Match_Rate_Synth_All": np.nan, "Match_Rate_Baseline_All": np.nan, "Distinct_Matches_Synth_All": np.nan,
+                "Match_Rate_Synth_NoText": np.nan, "Match_Rate_Baseline_NoText": np.nan, "Distinct_Matches_Synth_NoText": np.nan
+            }
 
         # ---------------------------------------------------------------------
         # COMPILE ALL METRICS
         # ---------------------------------------------------------------------
         metrics = {
             "Dataset": dataset_name,
-            "Model": model_name,
-            "Trial": trial_num,
+            "Synthetic_Rows": total_synth_rows,
             **multimodal_results,
             **mle_results,
             **domain_results,
@@ -141,12 +130,26 @@ def evaluate_run(dataset_name, model_name, trial_num, synth_file_path):
         }
         return metrics
 
+def _evaluate_trial(dataset_name, model_name, trial_num, synth_file_path):
+    print(f"Evaluating {model_name} on {dataset_name} (Trial {trial_num})...")
+
+    try:
+        fake_df = pd.read_csv(synth_file_path)
+        result = evaluate(dataset_name, fake_df)
+        return {
+            "Model": model_name,
+            "Trial": trial_num,
+            **result
+        }
+        
+
     except Exception as e:
         print(f"  [X] FATAL ERROR evaluating {model_name} on {dataset_name} (Trial {trial_num}): {e}")
         return {
             "Dataset": dataset_name,
             "Model": model_name,
             "Trial": trial_num,
+            "Synthetic_Rows": np.nan,
             "Error": str(e)
         }
 
@@ -164,7 +167,7 @@ if __name__ == "__main__":
                 expected_file = os.path.join(SYNTH_DIR, filename)
 
                 if os.path.exists(expected_file):
-                    metrics = evaluate_run(dataset, model, trial, expected_file)
+                    metrics = _evaluate_trial(dataset, model, trial, expected_file)
                     all_results.append(metrics)
                 else:
                     print(f"[-] Missing file: {filename}. Skipping.")
@@ -178,17 +181,13 @@ if __name__ == "__main__":
         
         # 1. Save Raw CSV
         results_df.to_csv(RESULTS_FILE, index=False)
-        print(f"\n✅ Raw master results table saved to {RESULTS_FILE}")
+        print(f"\nRaw master results table saved to {RESULTS_FILE}")
         
         numeric_cols = [c for c in results_df.columns if c not in ['Dataset', 'Model', 'Trial', 'Error']]
         for col in numeric_cols:
             results_df[col] = pd.to_numeric(results_df[col], errors='coerce')
             
-        # LOWER BOUND R^2: Treat predictions worse than the mean as 0 predictive utility
-        if 'MLE_R2' in results_df.columns:
-            results_df['MLE_R2'] = results_df['MLE_R2'].clip(lower=0.0)
-            
-        # Extract means and standard deviations
+        # Extract means and standard deviations across trials
         means = results_df.groupby(['Dataset', 'Model'], observed=True)[numeric_cols].mean()
         stds = results_df.groupby(['Dataset', 'Model'], observed=True)[numeric_cols].std().fillna(0.0)
 
@@ -196,15 +195,20 @@ if __name__ == "__main__":
         try:
             formatted_df = pd.DataFrame(index=means.index)
             
-            def format_text_num(val):
+            def format_text_num(val, is_integer_metric=False):
                 if pd.isnull(val): return "NaN"
+                if is_integer_metric: return f"{val:.0f}"
                 if abs(val) >= 1e6: return f"{val:.2e}"
                 return f"{val:.2f}"
             
             for col in numeric_cols:
+                is_int = (col == 'Synthetic_Rows')
                 m_series = means[col]
                 s_series = stds[col]
-                formatted_df[col] = [f"{format_text_num(m)} ± {format_text_num(s)}" if pd.notnull(m) else "NaN" for m, s in zip(m_series, s_series)]
+                formatted_df[col] = [
+                    f"{format_text_num(m, is_int)} ± {format_text_num(s, is_int)}" if pd.notnull(m) else "NaN"
+                    for m, s in zip(m_series, s_series)
+                ]
                 
             txt_file = "final_evaluation_summary.txt"
             with open(txt_file, "w") as f:
@@ -212,11 +216,10 @@ if __name__ == "__main__":
                 f.write("Aggregated over trials (Mean ± Std)\n")
                 f.write("=" * 120 + "\n\n")
                 f.write(formatted_df.reset_index().to_string(index=False, justify='left', col_space=10))
-            print(f"📄 Formatted summary saved to {txt_file}")
+            print(f"Formatted summary saved to {txt_file}")
         except Exception as e:
             print(f"  [!] Failed to generate summary text file: {e}")
 
-        # 3. Generate LaTeX Tables for Paper
         # 3. Generate LaTeX Tables for Paper
         try:
             print("Generating LaTeX tables...")
@@ -235,22 +238,27 @@ if __name__ == "__main__":
                 'tabkg': 'TabKG'
             }
 
-            def format_latex_cell(m, s, is_best):
+            def format_latex_cell(m, s, is_best, is_integer_metric=False):
                 if pd.isnull(m):
                     return "-"
                 
-                # Handle large numbers with grouped scientific notation
-                max_val = max(abs(m), abs(s)) if pd.notnull(s) else abs(m)
-                if max_val >= 1e6:
-                    exp = int(np.floor(np.log10(max_val)))
-                    m_base = m / (10**exp)
-                    s_base = s / (10**exp)
+                if is_integer_metric:
                     if s == 0:
-                        inner_str = f"{m_base:.2f} \\times 10^{{{exp}}} \\pm 0.00"
+                        inner_str = f"{m:.0f}"
                     else:
-                        inner_str = f"({m_base:.2f} \\pm {s_base:.2f}) \\times 10^{{{exp}}}"
+                        inner_str = f"{m:.0f} {{\\pm}} {s:.0f}"
                 else:
-                    inner_str = f"{m:.2f} \\pm {s:.2f}"
+                    max_val = max(abs(m), abs(s)) if pd.notnull(s) else abs(m)
+                    if max_val >= 1e6:
+                        exp = int(np.floor(np.log10(max_val)))
+                        m_base = m / (10**exp)
+                        s_base = s / (10**exp)
+                        if s == 0:
+                            inner_str = f"{m_base:.2f} \\times 10^{{{exp}}} \\pm 0.00"
+                        else:
+                            inner_str = f"({m_base:.2f} \\pm {s_base:.2f}) \\times 10^{{{exp}}}"
+                    else:
+                        inner_str = f"{m:.2f} \\pm {s:.2f}"
                     
                 if is_best:
                     return f"$\\bf{{{inner_str}}}$"
@@ -268,7 +276,7 @@ if __name__ == "__main__":
             }
 
             # Helper function for standard metric tables
-            def write_latex_table(f, metric_name, dataset_list, caption, label, baseline_metric=None):
+            def write_latex_table(f, metric_name, dataset_list, caption, label, baseline_metric=None, is_integer_metric=False):
                 f.write(f"% ==========================================\n")
                 f.write(f"% Table for {metric_name}\n")
                 f.write(f"% ==========================================\n")
@@ -280,22 +288,20 @@ if __name__ == "__main__":
                 header = ["Model"] + [d.capitalize() for d in dataset_list]
                 f.write(" & ".join(header) + " \\\\\n\\midrule\n")
                 
-                # Determine best model (excluding TabKG to prevent rewarding memorization)
+                # Determine best model (skip highlight on row counts)
                 best_model_per_dataset = {}
-                for dataset in dataset_list:
-                    if dataset in means.index.get_level_values(0):
-                        dataset_means = means.loc[dataset, metric_name].dropna()
-                        
-                        if 'tabkg' in dataset_means.index:
-                            dataset_means = dataset_means.drop('tabkg')
-                            
-                        if not dataset_means.empty:
-                            if metric_name in higher_is_better:
-                                best_model_per_dataset[dataset] = dataset_means.idxmax()
-                            elif metric_name in closer_to_half:
-                                best_model_per_dataset[dataset] = (dataset_means - 0.5).abs().idxmin()
-                            else:
-                                best_model_per_dataset[dataset] = dataset_means.idxmin()
+                if not is_integer_metric:
+                    for dataset in dataset_list:
+                        if dataset in means.index.get_level_values(0):
+                            dataset_means = means.loc[dataset, metric_name].dropna()
+                                
+                            if not dataset_means.empty:
+                                if metric_name in higher_is_better:
+                                    best_model_per_dataset[dataset] = dataset_means.idxmax()
+                                elif metric_name in closer_to_half:
+                                    best_model_per_dataset[dataset] = (dataset_means - 0.5).abs().idxmin()
+                                else:
+                                    best_model_per_dataset[dataset] = dataset_means.idxmin()
                 
                 # Write rows
                 for model in MODELS:
@@ -306,7 +312,7 @@ if __name__ == "__main__":
                             m = means.loc[(dataset, model), metric_name]
                             s = stds.loc[(dataset, model), metric_name]
                             is_best = best_model_per_dataset.get(dataset) == model
-                            row_data.append(format_latex_cell(m, s, is_best))
+                            row_data.append(format_latex_cell(m, s, is_best, is_integer_metric=is_integer_metric))
                         except KeyError:
                             row_data.append("-")
                             
@@ -357,7 +363,6 @@ if __name__ == "__main__":
                             dataset_means = dataset_means.drop('tabkg')
                             
                         if not dataset_means.empty:
-                            # Both Accuracy and R2 are higher-is-better metrics
                             best_unified_model[dataset] = dataset_means.idxmax()
                 
                 for model in MODELS:
@@ -395,8 +400,29 @@ if __name__ == "__main__":
                                   'Joint Fréchet Distance (FID) across multimodal embeddings. Note the extreme unbounded values for models hallucinating outside the continuous manifold, demonstrating instability for heterogeneous tabular evaluation.', 
                                   'tab:joint_fid_appendix')
 
+                write_latex_table(f, 'Match_Rate_Synth_All', DATASETS, 
+                                  'Exact Match Rate (including string features). Measures the proportion of synthetic rows that perfectly replicate a record in the training set. The \\textit{Baseline} row evaluates the natural repetition rate in the held-out test set.', 
+                                  'tab:match_rate_all',
+                                  baseline_metric='Match_Rate_Baseline_All')
+
+                write_latex_table(f, 'Match_Rate_Synth_NoText', DATASETS, 
+                                  'Exact Match Rate (excluding string features). Measures the proportion of synthetic rows that perfectly replicate the categorical and continuous features of a training record.', 
+                                  'tab:match_rate_notext',
+                                  baseline_metric='Match_Rate_Baseline_NoText')
+
+                write_latex_table(f, 'Synthetic_Rows', DATASETS, 
+                                  'Average number of generated synthetic samples across trials.', 
+                                  'tab:synthetic_row_counts',
+                                  is_integer_metric=True)
+
                 # Skip specialized metrics so they aren't generated twice by the fallback loop
-                skip_metrics = ['MLE_Accuracy', 'MLE_RMSE', 'MLE_R2', 'Constraint_Violation_Rate', 'DCR_Synth', 'DCR_Baseline', 'Joint_FID']
+                skip_metrics = [
+                    'MLE_Accuracy', 'MLE_RMSE', 'MLE_R2', 'Constraint_Violation_Rate', 
+                    'DCR_Synth', 'DCR_Baseline', 'Joint_FID', 
+                    'Match_Rate_Synth_All', 'Match_Rate_Baseline_All', 'Distinct_Matches_Synth_All',
+                    'Match_Rate_Synth_NoText', 'Match_Rate_Baseline_NoText', 'Distinct_Matches_Synth_NoText',
+                    'Synthetic_Rows'
+                ]
                 
                 for metric in numeric_cols:
                     if metric in skip_metrics:
@@ -415,4 +441,3 @@ if __name__ == "__main__":
 
     else:
         print("\n[!] No synthetic data files were found. Please check the SYNTH_DIR path.")
-        
