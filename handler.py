@@ -24,19 +24,19 @@ class TabDiffFormatter(BaseFormatter):
             col in set(meta['categorical'] + meta['integer'] + meta['continuous'] + meta['datetime'] + [meta['target']])]
         df = df[cols] # so this doesn't change relative ordering but removes non categorical text
         if len(meta.get('datetime', [])) > 0:
-            # 1. Force a hard copy of the DataFrame to break any view/slice references
+            # Force a hard copy of the DataFrame to break any view/slice references
             df = df.copy()
             
             for col in meta['datetime']:
-                # 2. Extract to a standalone series to guarantee the datetime cast applies
+                # Extract to a standalone series to guarantee the datetime cast applies
                 temp_dt = pd.to_datetime(df[col], errors='coerce')
                 is_missing = temp_dt.isna()
                 
-                # 3. Fill NaTs on the standalone series, cast to epoch seconds
+                # fill NaTs on the standalone series, cast to epoch seconds
                 epoch_series = temp_dt.fillna(pd.Timestamp("1970-01-01")).astype('int64') // 10**9
                 epoch_series = epoch_series.astype(float)
                 
-                # 5. Assign the safe, purely numerical series back to the DataFrame
+                # Assign the safe, purely numerical series back to the DataFrame
                 df[col] = epoch_series
         df.to_csv(os.path.join(datadir, f'{split}.csv'), index=False)
     
@@ -166,7 +166,6 @@ class GANFormatter(BaseFormatter):
     """CTGAN+"""
     def format_data(self, df: pd.DataFrame, meta: Dict[str, Any], split: str):
         all_valid_cols = meta.get('categorical', []) + meta.get('continuous', []) + meta.get('integer', []) + meta.get('datetime', [])
-        # print(f"dropping columns {set(df.columns)-set(all_valid_cols)} due to GAN limitation")
         df = df[all_valid_cols].copy() # prevent SettingWithCopyWarning
         
         if len(meta.get('datetime', [])) > 0:
@@ -207,13 +206,13 @@ class UnifiedDataLoader:
         self.dataset_name = dataset_name
         self.target_model_type = target_model_type
         
-        # 1. Load raw data
+        # Load raw data
         self.raw_train, self.raw_val, self.raw_test, self.raw_all = self._load_raw_data()
         
-        # 2. Attach downstream task metadata
+        # Attach downstream task metadata
         self.meta = self._get_task_metadata()
         
-        # 3. Initialize the correct formatter
+        # Initialize the correct formatter
         self.formatter = self._initialize_formatter()
             
 
@@ -434,27 +433,27 @@ class UnifiedDataLoader:
                 np.random.seed(42)
                 n_samples = 100000
                 
-                # 1. Independent Roots
+                # Independent Roots
                 x1 = np.random.normal(0, 1, n_samples)
                 x2 = np.random.normal(0, 1, n_samples)
                 
-                # 2. The Collider (X1 -> X3 <- X2)
+                # Collider (X1 -> X3 <- X2)
                 # X1 and X2 are independent, but highly correlated given X3
                 x3 = x1 + x2 + np.random.normal(0, 0.1, n_samples)
                 
-                # 3. The Confounder (Drives both X5 and the Target)
+                # Confounder (Drives both X5 and the Target)
                 x4_hidden = np.random.uniform(-3, 3, n_samples)
                 
-                # 4. The Non-Linear Proxy
+                # Non-Linear Proxy
                 # Models must learn a sine wave manifold, not just a Gaussian
                 x5 = np.sin(x4_hidden) + np.random.normal(0, 0.05, n_samples)
                 
-                # 5. The Categorical Noise
+                # Categorical Noise
                 # A purely random string column to test if models get distracted
                 categories = ['Alpha', 'Beta', 'Gamma', 'Delta']
                 x6_cat = np.random.choice(categories, n_samples)
                 
-                # 6. The Target (Strict Logical Boundary)
+                # Target (Strict Logical Boundary)
                 # To get a 1, X3 must be positive AND the hidden confounder must be positive
                 prob = 1 / (1 + np.exp(-(x3 + x4_hidden)))
                 target = (prob > 0.5).astype(int)
@@ -468,7 +467,6 @@ class UnifiedDataLoader:
                     'target_class': target
                 })
                 
-                # Because it's synthetic and math-based, order doesn't matter
                 size = len(df)
                 df_train = df[:int(std_train_frac*size)]
                 df_val = df[int(std_train_frac*size):int((std_train_frac+std_val_frac)*size)]
@@ -513,7 +511,6 @@ class UnifiedDataLoader:
             "moma":             {"target": "Department", "type": "classification"},
             "olist":            {"target": "freight_value", "type": "regression"},
             "bayesian":         {"target": "target_class", "type": "classification"},
-            # "nexrad":           {"target": "is_severe_hail", "type": "classification"},
         }
         meta = tasks[self.dataset_name]
         meta['dataset_name'] = self.dataset_name
@@ -530,7 +527,7 @@ class UnifiedDataLoader:
         total_rows = len(self.raw_train)
         
         for col in self.raw_train.columns:
-            # 1. Drop NaNs just for the inference check
+            # Drop NaNs just for inference check
             series = self.raw_train[col].dropna()
             if len(series) == 0:
                 continue

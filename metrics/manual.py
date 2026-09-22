@@ -18,7 +18,7 @@ def evaluate_domain_constraints(synth_df, dataset_name):
             # CONSTRAINT: Relativistic Kinematics
             # M = sqrt(2 * pT1 * pT2 * (cosh(eta1 - eta2) - cos(phi1 - phi2)))
             
-            # Look for the required columns (handling the trailing underscores in your schema)
+            # Look for the required columns
             cern_cols = ['pt1_', 'pt2_', 'eta1_', 'eta2_', 'phi1_', 'phi2_', 'M_']
             
             if all(c in synth_df.columns for c in cern_cols):

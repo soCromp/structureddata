@@ -26,7 +26,7 @@ def evaluate_mle(synth_train, real_test, real_train_reference, meta):
     test_df = real_test.copy()
     ref_df = real_train_reference.copy()
 
-    # 1. Target Extraction & Validation
+    # Target Extraction & Validation
     if 'class' in task_type:
         le_target = LabelEncoder()
         le_target.fit(pd.concat([ref_df[target_col], synth_df[target_col], test_df[target_col]]).astype(str))
@@ -47,7 +47,7 @@ def evaluate_mle(synth_train, real_test, real_train_reference, meta):
         y_synth = y_synth_raw.fillna(y_synth_raw.median()).values
         y_test = y_test_raw.values
 
-    # 2. Deconstruct Datetimes into Generalized Cyclical/Calendar Features
+    # Deconstruct Datetimes into Generalized Cyclical/Calendar Features
     datetime_cols = [c for c in meta.get('datetime', []) if c != target_col and c in synth_df.columns]
     derived_date_cols = []
     
@@ -62,13 +62,13 @@ def evaluate_mle(synth_train, real_test, real_train_reference, meta):
             
         derived_date_cols.extend([f'{c}_month', f'{c}_day', f'{c}_dayofweek', f'{c}_hour'])
 
-    # 3. Feature Column Lists
+    # Feature Column Lists
     categorical_cols = [c for c in meta.get('categorical', []) if c != target_col and c in synth_df.columns]
     continuous_cols = [c for c in meta.get('continuous', []) + meta.get('integer', []) if c != target_col and c in synth_df.columns]
     continuous_cols.extend(derived_date_cols)
     text_cols = [c for c in meta.get('text', []) if c != target_col and c in synth_df.columns]
 
-    # 4. Feature Extraction
+    # Feature Extraction
     def extract_features(df, is_synth=False):
         matrices = []
         
@@ -109,7 +109,7 @@ def evaluate_mle(synth_train, real_test, real_train_reference, meta):
     if X_synth.shape[1] == 0 or len(y_test) == 0:
         return _get_empty_results(task_type)
 
-    # 5. Model Training & Evaluation
+    # Model Training & Evaluation
     try:
         if 'class' in task_type:
             if len(np.unique(y_synth)) < 2:
@@ -140,8 +140,7 @@ def evaluate_mle(synth_train, real_test, real_train_reference, meta):
             return {"MLE_Accuracy": acc, "MLE_F1": f1, "MLE_AUC": auc}
             
         else:
-            from sklearn.ensemble import HistGradientBoostingRegressor, VotingRegressor, RandomForestRegressor
-            from sklearn.linear_model import HuberRegressor
+            from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
             from sklearn.pipeline import make_pipeline
             from sklearn.preprocessing import RobustScaler
             from sklearn.compose import TransformedTargetRegressor
@@ -164,7 +163,7 @@ def evaluate_mle(synth_train, real_test, real_train_reference, meta):
                 )
                 
             elif is_olist:
-                # OLIST STRATEGY: High Capacity & Log-Normal Targets
+                # OLIST: High Capacity & Log-Normal Targets
                 # E-commerce data has real signal but is heavily skewed. We need deeper trees 
                 # to learn category-price interactions, paired with early stopping.
                 base_reg = HistGradientBoostingRegressor(
@@ -179,7 +178,7 @@ def evaluate_mle(synth_train, real_test, real_train_reference, meta):
                     random_state=42
                 )
                 
-                # Safely log-transform highly skewed price/freight targets
+                # safely log-transform highly skewed price/freight targets
                 use_log_transform = bool((y_synth >= 0).all() and (y_test >= 0).all() and np.ptp(y_synth) > 20)
                 if use_log_transform:
                     reg = TransformedTargetRegressor(regressor=base_reg, func=np.log1p, inverse_func=np.expm1)

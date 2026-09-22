@@ -38,7 +38,7 @@ def evaluate_multimodal_realism(real_df, synth_df, categorical_cols, continuous_
     # Align rows to a max sample size to prevent OOM errors and speed up the Random Forest
     n_samples = min(len(real_df), len(synth_df), sample_size)
     
-    if n_samples < 100:  # Prevent crashes on severe mode collapse
+    if n_samples < 100:  # Prevent crashes on collapse
         return {"Joint_FID": np.nan, "C2ST_Accuracy": np.nan, "C2ST_AUC": np.nan}
         
     real_sub = real_df.sample(n_samples, random_state=42).copy()
@@ -50,7 +50,7 @@ def evaluate_multimodal_realism(real_df, synth_df, categorical_cols, continuous_
     real_matrices = []
     synth_matrices = []
     
-    # 1. Process Text (Embeddings)
+    # Process Text (Embeddings)
     if text_cols:
         for col in text_cols:
             real_text = real_sub[col].fillna("Missing").astype(str).tolist()
@@ -63,17 +63,17 @@ def evaluate_multimodal_realism(real_df, synth_df, categorical_cols, continuous_
             real_matrices.append(real_embs)
             synth_matrices.append(synth_embs)
             
-    # 2. Process Tabular (Numerical & Categorical)
+    # Process Tabular Numerical & Categorical
     eval_cats = [c for c in categorical_cols if c in real_sub.columns and c not in text_cols]
     eval_conts = [c for c in continuous_cols if c in real_sub.columns and c not in text_cols]
     
     if eval_cats:
         for col in eval_cats:
-            # 1. Fill NaNs FIRST, then convert to string for both splits
+            # Fill NaNs, then convert to string for both splits
             r_series = real_sub[col].fillna("Missing").astype(str)
             s_series = synth_sub[col].fillna("Missing").astype(str)
             
-            # 2. Combine the already-sanitized series so classes are identical
+            # Combine the already-sanitized series so classes are identical
             combined = pd.concat([r_series, s_series], axis=0)
             
             le = LabelEncoder()
@@ -88,7 +88,7 @@ def evaluate_multimodal_realism(real_df, synth_df, categorical_cols, continuous_
     if eval_conts:
         scaler = StandardScaler()
         
-        # 1. Safely parse numbers, explicitly converting string 'inf' or np.inf to NaN, then to 0
+        # parse numbers, explicitly converting string 'inf' or np.inf to NaN, then to 0
         r_cont = real_sub[eval_conts].replace([np.inf, -np.inf], np.nan).apply(pd.to_numeric, errors='coerce').fillna(0).values
         s_cont = synth_sub[eval_conts].replace([np.inf, -np.inf], np.nan).apply(pd.to_numeric, errors='coerce').fillna(0).values
         
@@ -96,8 +96,8 @@ def evaluate_multimodal_realism(real_df, synth_df, categorical_cols, continuous_
         scaled_r = scaler.transform(r_cont)
         scaled_s = scaler.transform(s_cont)
         
-        # 2. Clip astronomical outliers to prevent float32 overflow in Random Forest
-        # 1e15 is safely under the 3.4e38 limit, but large enough to correctly ruin the model's score
+        # Clip large outliers to prevent float32 overflow in Random Forest
+        # 1e15 safely under the 3.4e38 limit, but large enough to correctly ruin the model's score
         float32_safe_max = 1e15
         scaled_s = np.clip(scaled_s, -float32_safe_max, float32_safe_max)
         scaled_r = np.clip(scaled_r, -float32_safe_max, float32_safe_max)
@@ -105,21 +105,21 @@ def evaluate_multimodal_realism(real_df, synth_df, categorical_cols, continuous_
         real_matrices.append(scaled_r)
         synth_matrices.append(scaled_s)
         
-    # 3. Concatenate into Joint Multimodal Space
+    # Concatenate into Joint Multimodal Space
     if not real_matrices:
         return {"Joint_FID": np.nan, "C2ST_Accuracy": np.nan, "C2ST_AUC": np.nan}
         
     X_real_joint = np.hstack(real_matrices)
     X_synth_joint = np.hstack(synth_matrices)
     
-    # 4. Joint-FID
+    # Joint-FID
     try:
         joint_fid = compute_frechet_distance(X_real_joint, X_synth_joint)
     except Exception as e:
         print(f"  [!] Joint-FID failed: {e}")
         joint_fid = np.nan
         
-    # 5. Classifier Two-Sample Test (C2ST)
+    # Classifier Two-Sample Test (C2ST)
     try:
         # Create dataset: Real = 1, Synth = 0
         X_combined = np.vstack([X_real_joint, X_synth_joint])

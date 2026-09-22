@@ -42,7 +42,7 @@ def evaluate(dataset_name, fake_df):
         expected_text_cols = [c for c in text_cols if c in real_df.columns]
 
         # ---------------------------------------------------------------------
-        # 1. EVALUATE MULTIMODAL REALISM (CROSS-MODAL JOINT FIDELITY)
+        # 1. EVALUATE FIDELITY
         # ---------------------------------------------------------------------
         multimodal_results = {}
         try:
@@ -74,7 +74,7 @@ def evaluate(dataset_name, fake_df):
             }
 
         # ---------------------------------------------------------------------
-        # EVALUATE DOWNSTREAM ML UTILITY (TSTR)
+        # EVALUATE DOWNSTREAM ML UTILITY (MLE)
         # ---------------------------------------------------------------------
         real_test_df = loader.get_test_data()
         mle_results = {}
@@ -179,7 +179,7 @@ if __name__ == "__main__":
         results_df['Dataset'] = pd.Categorical(results_df['Dataset'], categories=DATASETS, ordered=True)
         results_df['Model'] = pd.Categorical(results_df['Model'], categories=MODELS, ordered=True)
         
-        # 1. Save Raw CSV
+        # save raw CSV
         results_df.to_csv(RESULTS_FILE, index=False)
         print(f"\nRaw master results table saved to {RESULTS_FILE}")
         
@@ -191,7 +191,7 @@ if __name__ == "__main__":
         means = results_df.groupby(['Dataset', 'Model'], observed=True)[numeric_cols].mean()
         stds = results_df.groupby(['Dataset', 'Model'], observed=True)[numeric_cols].std().fillna(0.0)
 
-        # 2. Generate Human Readable Text
+        #  make human readable text
         try:
             formatted_df = pd.DataFrame(index=means.index)
             
@@ -220,7 +220,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"  [!] Failed to generate summary text file: {e}")
 
-        # 3. Generate LaTeX Tables for Paper
+        # LaTeX Tables for Paper
         try:
             print("Generating LaTeX tables...")
             latex_file = "evaluation_tables.tex"
@@ -228,7 +228,7 @@ if __name__ == "__main__":
             higher_is_better = ['MLE_Accuracy', 'MLE_F1', 'MLE_AUC', 'MLE_R2']
             closer_to_half = ['C2ST_Accuracy', 'C2ST_AUC']
             
-            # Enforce strict capitalization for the paper
+            # capitalization for the paper
             MODEL_DISPLAY_NAMES = {
                 'tabby': 'Tabby',
                 'ctganp': 'CTGANP',
@@ -288,7 +288,7 @@ if __name__ == "__main__":
                 header = ["Model"] + [d.capitalize() for d in dataset_list]
                 f.write(" & ".join(header) + " \\\\\n\\midrule\n")
                 
-                # Determine best model (skip highlight on row counts)
+                # Determine best model (skip highlight on row counts). isn't perfect so double check manually
                 best_model_per_dataset = {}
                 if not is_integer_metric:
                     for dataset in dataset_list:
@@ -300,7 +300,7 @@ if __name__ == "__main__":
                                     best_model_per_dataset[dataset] = dataset_means.idxmax()
                                 elif metric_name in closer_to_half:
                                     best_model_per_dataset[dataset] = (dataset_means - 0.5).abs().idxmin()
-                                else:
+                                else: # lower better
                                     best_model_per_dataset[dataset] = dataset_means.idxmin()
                 
                 # Write rows
@@ -341,7 +341,7 @@ if __name__ == "__main__":
 
             with open(latex_file, "w") as f:
                 
-                # --- 1. GENERATE UNIFIED MLE TABLE ---
+                # --- UNIFIED MLE TABLE ---
                 f.write(f"% ==========================================\n")
                 f.write(f"% Unified Downstream ML Efficacy (Accuracy & R^2)\n")
                 f.write(f"% ==========================================\n")
@@ -385,7 +385,7 @@ if __name__ == "__main__":
                 f.write("\\label{tab:mle_unified}\n")
                 f.write("\\end{table}\n\n\n")
 
-                # --- 2. GENERATE REMAINING TABLES ---
+                # --- OTHER TABLES ---
                 constraint_datasets = [d for d in DATASETS if d not in ['moma', 'stroke']]
 
                 write_latex_table(f, 'Constraint_Violation_Rate', constraint_datasets, 
@@ -434,7 +434,7 @@ if __name__ == "__main__":
                     
                     write_latex_table(f, metric, DATASETS, caption, label)
                     
-            print(f"📑 LaTeX tables successfully generated and saved to {latex_file}")
+            print(f"LaTeX tables successfully generated and saved to {latex_file}")
             
         except Exception as e:
             print(f"  [!] Failed to generate LaTeX file: {e}")

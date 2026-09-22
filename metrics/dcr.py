@@ -104,7 +104,7 @@ def evaluate_multimodal_dcr(real_train_df, synth_df, real_test_df, categorical_c
                 # Standardize numeric serialization without rounding
                 subset[c] = pd.to_numeric(subset[c], errors='coerce').astype(float).astype(str)
             else:
-                # Do not aggressively normalize text, only handle NaNs
+                # nonnumeric. only handle NaNs
                 subset[c] = subset[c].fillna("").astype(str)
         return subset.apply(tuple, axis=1)
 
@@ -117,11 +117,11 @@ def evaluate_multimodal_dcr(real_train_df, synth_df, real_test_df, categorical_c
         
         train_sig_set = set(train_sigs)
         
-        # 1. Match Rate
+        # Match Rate
         matches = eval_sigs.isin(train_sig_set)
         match_rate = float(matches.mean())
         
-        # 2. Distinct Matches
+        # Distinct Matches
         distinct_matches = len(set(eval_sigs).intersection(train_sig_set))
         
         return match_rate, distinct_matches
